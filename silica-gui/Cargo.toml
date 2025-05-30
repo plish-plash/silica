@@ -1,0 +1,15 @@
+[package]
+name = "silica-gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+silica-gui-macros = { path = "../silica-gui-macros" }
+silica-color = { path = "../silica-color" }
+silica-wgpu = { path = "../silica-wgpu" }
+serde = { version = "1.0", features = ["derive"] }
+bytemuck = "1.23"
+euclid = { version = "0.22", features = ["bytemuck", "serde"] }
+glyphon = "0.9"
+taffy = "0.8"
+log = "0.4"

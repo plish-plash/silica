@@ -1,0 +1,3 @@
+[workspace]
+members = ["silica-color", "silica-wgpu", "silica-gui", "silica-gui-macros", "silica-window"]
+resolver = "2"
