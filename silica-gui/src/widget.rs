@@ -16,6 +16,7 @@ use crate::{
 pub struct VisibleProperties {
     pub layout: Style,
     pub visible: bool,
+    pub separate_layer: bool,
     pub background: Option<ThemeColor>,
 }
 
@@ -24,6 +25,7 @@ impl Default for VisibleProperties {
         Self {
             layout: Style::default(),
             visible: true,
+            separate_layer: false,
             background: None,
         }
     }
@@ -31,6 +33,7 @@ impl Default for VisibleProperties {
 
 pub struct Visible {
     pub visible: bool,
+    pub separate_layer: bool,
     pub background: Option<ThemeColor>,
 }
 
@@ -40,6 +43,7 @@ impl Visible {
             properties.layout,
             Visible {
                 visible: properties.visible,
+                separate_layer: properties.separate_layer,
                 background: properties.background,
             },
         )
@@ -48,6 +52,9 @@ impl Visible {
 impl Widget for Visible {
     fn visible(&self) -> bool {
         self.visible
+    }
+    fn separate_layer(&self) -> bool {
+        self.separate_layer
     }
     fn draw<'a>(
         &'a self,
@@ -184,17 +191,16 @@ impl Label {
 impl Widget for Label {
     fn measure(
         &mut self,
+        font_system: &mut FontSystem,
         known_dimensions: Size<Option<f32>>,
         available_space: Size<AvailableSpace>,
-        font_system: &mut FontSystem,
     ) -> Size<f32> {
         let width_constraint = known_dimensions.width.or(match available_space.width {
-            AvailableSpace::MinContent => None, //Some(0.0),
+            AvailableSpace::MinContent => None, // TODO handle MinContent correctly
             AvailableSpace::MaxContent => None,
             AvailableSpace::Definite(width) => Some(width),
         });
         self.0.set_size(font_system, width_constraint, None);
-        // self.0.shape_until_scroll(font_system, false);
         let (width, total_lines) = self
             .0
             .layout_runs()
@@ -203,6 +209,9 @@ impl Widget for Label {
             });
         let height = total_lines as f32 * self.0.metrics().line_height;
         Size { width, height }
+    }
+    fn layout(&mut self, font_system: &mut FontSystem, rect: Rect) {
+        self.0.set_size(font_system, Some(rect.width()), None);
     }
     fn draw<'a>(
         &'a self,

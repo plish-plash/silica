@@ -195,17 +195,21 @@ pub trait Upcast {
 pub trait Widget: Upcast + 'static {
     fn measure(
         &mut self,
+        font_system: &mut FontSystem,
         known_dimensions: taffy::Size<Option<f32>>,
         available_space: taffy::Size<AvailableSpace>,
-        font_system: &mut FontSystem,
     ) -> taffy::Size<f32> {
         taffy::Size::ZERO
     }
+    fn layout(&mut self, font_system: &mut FontSystem, rect: Rect) {}
     fn input(&mut self, input: &GuiInput, executor: &mut EventExecutor, rect: Rect) -> InputAction {
         InputAction::Pass
     }
     fn visible(&self) -> bool {
         true
+    }
+    fn separate_layer(&self) -> bool {
+        false
     }
     fn draw<'a>(
         &'a self,
@@ -263,6 +267,7 @@ pub struct Gui {
     tree: TaffyTree<Box<dyn Widget>>,
     root: NodeId,
     available_space: taffy::Size<AvailableSpace>,
+    layouts: Vec<Vec<(NodeId, Rect, SideOffsets)>>,
     input: GuiInput,
     grabbed_node: Option<NodeId>,
     draw_dirty: bool,
@@ -281,7 +286,8 @@ impl Gui {
             font_system,
             tree,
             root,
-            available_space: taffy::Size::min_content(),
+            available_space: taffy::Size::max_content(),
+            layouts: Vec::new(),
             input: GuiInput::default(),
             grabbed_node: None,
             draw_dirty: true,
@@ -398,6 +404,36 @@ impl Gui {
             height: AvailableSpace::Definite(size.height as f32),
         });
     }
+    fn update_layout_data(
+        tree: &TaffyTree<Box<dyn Widget>>,
+        layouts: &mut Vec<Vec<(NodeId, Rect, SideOffsets)>>,
+        node: NodeId,
+        mut layer: usize,
+        mut offset: Vector,
+    ) {
+        let (is_widget, visible, separate_layer) = tree
+            .get_node_context(node)
+            .map(|widget| (true, widget.visible(), widget.separate_layer()))
+            .unwrap_or((false, true, false));
+        if visible {
+            let layout = tree.get_final_layout(node);
+            if is_widget {
+                let rect = layout.content_box().translate(offset);
+                if separate_layer {
+                    layer += 1;
+                }
+                if layer >= layouts.len() {
+                    layouts.push(Vec::new());
+                }
+                layouts[layer].push((node, rect, layout.padding()));
+            }
+            offset.x += layout.location.x;
+            offset.y += layout.location.y;
+            for child in tree.child_ids(node) {
+                Self::update_layout_data(tree, layouts, child, layer, offset);
+            }
+        }
+    }
     pub fn layout(&mut self) {
         if !self.tree.dirty(self.root).unwrap() {
             return;
@@ -413,14 +449,16 @@ impl Gui {
                     } = known_dimensions
                     {
                         taffy::Size { width, height }
-                    } else if let Some(context) = context {
-                        context.measure(known_dimensions, available_space, &mut self.font_system)
+                    } else if let Some(widget) = context {
+                        widget.measure(&mut self.font_system, known_dimensions, available_space)
                     } else {
                         taffy::Size::ZERO
                     }
                 },
             )
             .unwrap();
+        self.layouts.clear();
+        Self::update_layout_data(&self.tree, &mut self.layouts, self.root, 0, Vector::zero());
         self.draw_dirty = true;
     }
     pub fn get_rect(&self, node: impl Into<NodeId>) -> Rect {
@@ -439,30 +477,22 @@ impl Gui {
     }
 
     fn dispatch_input_event(
-        &mut self,
+        tree: &mut TaffyTree<Box<dyn Widget>>,
+        input: &mut GuiInput,
+        grabbed_node: &mut Option<NodeId>,
         node: NodeId,
-        mut offset: Vector,
+        rect: Rect,
         executor: &mut EventExecutor,
     ) {
-        let layout = self.tree.get_final_layout(node);
-        let rect = layout.content_box().translate(offset);
-        offset.x += layout.location.x;
-        offset.y += layout.location.y;
-
-        let child_count = self.tree.child_count(node);
-        for child_index in (0..child_count).rev() {
-            let child = self.tree.child_at_index(node, child_index).unwrap();
-            self.dispatch_input_event(child, offset, executor);
-        }
-        if let Some(context) = self.tree.get_node_context_mut(node) {
-            match context.input(&self.input, executor, rect) {
+        if let Some(widget) = tree.get_node_context_mut(node) {
+            match widget.input(input, executor, rect) {
                 InputAction::Pass => {}
                 InputAction::Block => {
-                    self.input.blocked = true;
+                    input.blocked = true;
                 }
                 InputAction::Grab => {
-                    self.input.blocked = true;
-                    self.grabbed_node = Some(node);
+                    input.blocked = true;
+                    *grabbed_node = Some(node);
                 }
             }
         }
@@ -475,9 +505,26 @@ impl Gui {
         let mut executor = EventExecutor::new();
         if let Some(node) = self.grabbed_node.take() {
             self.input.grabbed = true;
-            self.dispatch_input_event(node, Vector::zero(), &mut executor);
+            let rect = self.get_rect(node);
+            Self::dispatch_input_event(
+                &mut self.tree,
+                &mut self.input,
+                &mut self.grabbed_node,
+                node,
+                rect,
+                &mut executor,
+            );
         } else {
-            self.dispatch_input_event(self.root, Vector::zero(), &mut executor);
+            for (node, rect, _) in self.layouts.iter().flatten().rev() {
+                Self::dispatch_input_event(
+                    &mut self.tree,
+                    &mut self.input,
+                    &mut self.grabbed_node,
+                    *node,
+                    *rect,
+                    &mut executor,
+                );
+            }
         }
         self.draw_dirty |= executor.draw_dirty;
         let event = if self.input.blocked {

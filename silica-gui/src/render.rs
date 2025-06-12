@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, ops::Range};
+use std::{collections::HashMap, num::NonZeroU64, ops::Range};
 
 use bytemuck::{Pod, Zeroable};
 use glyphon::{FontSystem, PrepareError, RenderError, TextArea, TextRenderer};
@@ -6,11 +6,10 @@ use silica_color::Rgba;
 use silica_wgpu::{
     draw::DrawQuad, wgpu, Context, ResizableBuffer, SurfaceSize, Texture, TextureConfig, UvRect,
 };
-use taffy::{Layout, NodeId, PrintTree, TaffyTree, TraversePartialTree};
 
 use crate::{
     theme::{Theme, ThemeColor, ThemeLoader},
-    Gui, LayoutExt, Vector, Widget,
+    Gui,
 };
 
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -151,29 +150,14 @@ impl QuadRenderer {
     fn surface_resize(&mut self, context: &Context, size: SurfaceSize) {
         self.viewport.update(&context.queue, size);
     }
-    fn render(
-        &self,
-        pass: &mut wgpu::RenderPass,
-        texture: &Texture,
-        custom_textures: &[Texture],
-        buffer: &ResizableBuffer<Quad>,
-        ranges: &[(Option<usize>, Range<u32>)],
-    ) {
-        if buffer.is_empty() {
-            return;
-        }
+    fn bind(&self, pass: &mut wgpu::RenderPass, buffer: &ResizableBuffer<Quad>) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.viewport.bind_group, &[]);
         pass.set_vertex_buffer(0, buffer.buffer().slice(..));
-        for (texture_index, range) in ranges {
-            let texture = if let Some(index) = texture_index {
-                &custom_textures[*index]
-            } else {
-                texture
-            };
-            pass.set_bind_group(1, texture.bind_group(), &[]);
-            pass.draw(0..4, range.clone());
-        }
+    }
+    fn draw(&self, pass: &mut wgpu::RenderPass, texture: &Texture, range: Range<u32>) {
+        pass.set_bind_group(1, texture.bind_group(), &[]);
+        pass.draw(0..4, range.clone());
     }
 }
 
@@ -212,83 +196,63 @@ impl TextResources {
     }
 }
 
-struct GuiLayerRenderer {
-    quads: Vec<Quad>,
-    quads_ranges: Vec<(Option<usize>, Range<u32>)>,
-    quads_buffer: ResizableBuffer<Quad>,
-    text_renderer: TextRenderer,
-}
-
-impl GuiLayerRenderer {
-    fn new(context: &Context, text_resources: &mut TextResources) -> Self {
-        let text_renderer = TextRenderer::new(
-            &mut text_resources.atlas,
-            &context.device,
-            wgpu::MultisampleState::default(),
-            None,
-        );
-        GuiLayerRenderer {
-            quads: Vec::new(),
-            quads_ranges: Vec::new(),
-            quads_buffer: ResizableBuffer::new(context),
-            text_renderer,
-        }
-    }
+enum DrawRange {
+    ThemeQuads(Range<u32>),
+    CustomQuads(Range<u32>, Texture),
+    Text(usize),
 }
 
 pub struct GuiBatcher<'a> {
-    layer: &'a mut GuiLayerRenderer,
+    layer: usize,
+    quads: &'a mut Vec<Quad>,
+    custom_quads: HashMap<Texture, Vec<Quad>>,
+    text_renderer: &'a mut TextRenderer,
     text_areas: Vec<TextArea<'a>>,
-    current_texture: Option<usize>,
-    last_index: u32,
+    draw_start: u32,
 }
 
 impl<'a> GuiBatcher<'a> {
-    fn new(layer: &'a mut GuiLayerRenderer) -> Self {
-        layer.quads_ranges.clear();
+    fn new(layer: usize, quads: &'a mut Vec<Quad>, text_renderer: &'a mut TextRenderer) -> Self {
+        let draw_start = quads.len() as u32;
         GuiBatcher {
             layer,
+            quads,
+            custom_quads: HashMap::new(),
+            text_renderer,
             text_areas: Vec::new(),
-            current_texture: None,
-            last_index: 0,
-        }
-    }
-    fn set_texture(&mut self, texture: Option<usize>) {
-        if self.current_texture != texture {
-            let next_index = self.layer.quads.len() as u32;
-            if next_index > self.last_index {
-                self.layer
-                    .quads_ranges
-                    .push((self.current_texture, self.last_index..next_index));
-            }
-            self.current_texture = texture;
-            self.last_index = next_index;
+            draw_start,
         }
     }
     pub fn queue_theme_quad(&mut self, quad: Quad) {
-        self.set_texture(None);
-        self.layer.quads.push(quad);
+        self.quads.push(quad);
     }
-    pub fn queue_custom_quad(&mut self, texture: impl Into<usize>, quad: Quad) {
-        self.set_texture(Some(texture.into()));
-        self.layer.quads.push(quad);
+    pub fn queue_custom_quad(&mut self, texture: Texture, quad: Quad) {
+        self.custom_quads.entry(texture).or_default().push(quad);
     }
     pub fn queue_text(&mut self, text_area: TextArea<'a>) {
         self.text_areas.push(text_area);
     }
-    fn prepare(
+    fn commit(
         self,
         context: &Context,
         font_system: &mut FontSystem,
         text_resources: &mut TextResources,
-    ) -> &'a mut GuiLayerRenderer {
-        self.layer.quads_ranges.push((
-            self.current_texture,
-            self.last_index..(self.layer.quads.len() as u32),
-        ));
-        self.layer.quads_buffer.set_data(context, &self.layer.quads);
-        self.layer.quads.clear();
-        match self.layer.text_renderer.prepare(
+        draw_ranges: &mut Vec<DrawRange>,
+    ) {
+        let mut draw_start = self.draw_start;
+        let draw_end = self.quads.len() as u32;
+        if draw_end > draw_start {
+            draw_ranges.push(DrawRange::ThemeQuads(draw_start..draw_end));
+            draw_start = draw_end;
+        }
+        for (texture, mut custom_quads) in self.custom_quads {
+            self.quads.append(&mut custom_quads);
+            let draw_end = self.quads.len() as u32;
+            draw_ranges.push(DrawRange::CustomQuads(draw_start..draw_end, texture));
+            draw_start = draw_end;
+        }
+        let has_text = !self.text_areas.is_empty();
+        match self.text_renderer.prepare(
             &context.device,
             &context.queue,
             font_system,
@@ -302,7 +266,9 @@ impl<'a> GuiBatcher<'a> {
                 log::warn!("failed to prepare text for rendering: atlas full")
             }
         }
-        self.layer
+        if has_text {
+            draw_ranges.push(DrawRange::Text(self.layer));
+        }
     }
 }
 impl DrawQuad for GuiBatcher<'_> {
@@ -318,10 +284,12 @@ impl DrawQuad for GuiBatcher<'_> {
 pub struct GuiRenderer {
     quad_renderer: QuadRenderer,
     text_resources: TextResources,
-    layers: Vec<GuiLayerRenderer>,
     theme: Box<dyn Theme>,
     theme_texture: Texture,
-    custom_textures: Vec<Texture>,
+    quads: Vec<Quad>,
+    quads_buffer: ResizableBuffer<Quad>,
+    text_renderers: Vec<TextRenderer>,
+    draw_ranges: Vec<DrawRange>,
 }
 
 impl GuiRenderer {
@@ -353,16 +321,15 @@ impl GuiRenderer {
         GuiRenderer {
             quad_renderer,
             text_resources,
-            layers: Vec::new(),
             theme,
             theme_texture,
-            custom_textures: Vec::new(),
+            quads: Vec::new(),
+            quads_buffer: ResizableBuffer::new(context),
+            text_renderers: Vec::new(),
+            draw_ranges: Vec::new(),
         }
     }
 
-    pub fn set_custom_textures(&mut self, textures: Vec<Texture>) {
-        self.custom_textures = textures;
-    }
     pub fn surface_resize(&mut self, context: &Context, size: SurfaceSize) {
         self.quad_renderer.surface_resize(context, size);
         self.text_resources.surface_resize(context, size);
@@ -371,97 +338,72 @@ impl GuiRenderer {
         self.theme.color(ThemeColor::Background)
     }
 
-    fn visit_nodes<'a>(
-        tree: &'a TaffyTree<Box<dyn Widget>>,
-        node: NodeId,
-        mut offset: Vector,
-        f: &mut impl FnMut(Option<&'a dyn Widget>, Vector, &'a Layout),
-    ) {
-        let context = tree.get_node_context(node).map(|context| context.as_ref());
-        if !context.map(|widget| widget.visible()).unwrap_or(true) {
-            return;
-        }
-        let layout = tree.get_final_layout(node);
-        f(context, offset, layout);
-        offset.x += layout.location.x;
-        offset.y += layout.location.y;
-        for child in tree.child_ids(node) {
-            Self::visit_nodes(tree, child, offset, f);
-        }
-    }
-    fn render_layer_text(
-        pass: &mut wgpu::RenderPass,
-        layer: &GuiLayerRenderer,
-        text_resources: &TextResources,
-    ) {
-        match layer
-            .text_renderer
-            .render(&text_resources.atlas, &text_resources.viewport, pass)
-        {
-            Ok(()) => (),
-            Err(RenderError::RemovedFromAtlas) => {
-                log::warn!("failed to render text: a glyph was removed from the atlas")
-            }
-            Err(RenderError::ScreenResolutionChanged) => {
-                log::warn!("failed to render text: screen resolution changed")
-            }
-        }
-    }
     pub fn render(&mut self, context: &Context, pass: &mut wgpu::RenderPass, gui: &mut Gui) {
         gui.layout();
         if gui.draw_dirty {
+            self.quads.clear();
+            self.draw_ranges.clear();
+            for (index, layer) in gui.layouts.iter().enumerate() {
+                if index >= self.text_renderers.len() {
+                    self.text_renderers.push(TextRenderer::new(
+                        &mut self.text_resources.atlas,
+                        &context.device,
+                        wgpu::MultisampleState::default(),
+                        None,
+                    ));
+                }
+                let mut batcher =
+                    GuiBatcher::new(index, &mut self.quads, &mut self.text_renderers[index]);
+                for (node, rect, padding) in layer.iter() {
+                    if let Some(widget) = gui.tree.get_node_context(*node) {
+                        widget.draw(&mut batcher, self.theme.as_ref(), *rect, *padding);
+                    }
+                }
+                batcher.commit(
+                    context,
+                    &mut gui.font_system,
+                    &mut self.text_resources,
+                    &mut self.draw_ranges,
+                );
+            }
+            self.quads_buffer.set_data(context, &self.quads);
             gui.draw_dirty = false;
-            let layer_count = 1; // TODO
-            if layer_count > self.layers.len() {
-                self.layers.resize_with(layer_count, || {
-                    GuiLayerRenderer::new(context, &mut self.text_resources)
-                });
-            }
-            let mut batchers: Vec<_> = self.layers.iter_mut().map(GuiBatcher::new).collect();
-            Self::visit_nodes(
-                &gui.tree,
-                gui.root,
-                Vector::zero(),
-                &mut |widget, offset, layout| {
-                    let layer = 0; // TODO
-                    let batcher = &mut batchers[layer];
-                    // TODO better border
-                    if layout.border.left > 0.0
-                        || layout.border.top > 0.0
-                        || layout.border.right > 0.0
-                        || layout.border.bottom > 0.0
-                    {
-                        self.theme
-                            .draw_border(batcher, layout.border_box().translate(offset));
+        }
+
+        let mut quads_pipeline_bound = false;
+        for draw_range in self.draw_ranges.iter() {
+            match draw_range {
+                DrawRange::ThemeQuads(range) => {
+                    if !quads_pipeline_bound {
+                        self.quad_renderer.bind(pass, &self.quads_buffer);
+                        quads_pipeline_bound = true;
                     }
-                    if let Some(widget) = widget {
-                        let rect = layout.content_box().translate(offset);
-                        widget.draw(batcher, self.theme.as_ref(), rect, layout.padding());
+                    self.quad_renderer
+                        .draw(pass, &self.theme_texture, range.clone());
+                }
+                DrawRange::CustomQuads(range, texture) => {
+                    if !quads_pipeline_bound {
+                        self.quad_renderer.bind(pass, &self.quads_buffer);
+                        quads_pipeline_bound = true;
                     }
-                },
-            );
-            for batcher in batchers {
-                let layer =
-                    batcher.prepare(context, &mut gui.font_system, &mut self.text_resources);
-                self.quad_renderer.render(
-                    pass,
-                    &self.theme_texture,
-                    &self.custom_textures,
-                    &layer.quads_buffer,
-                    &layer.quads_ranges,
-                );
-                Self::render_layer_text(pass, layer, &self.text_resources);
-            }
-        } else {
-            for layer in self.layers.iter_mut() {
-                self.quad_renderer.render(
-                    pass,
-                    &self.theme_texture,
-                    &self.custom_textures,
-                    &layer.quads_buffer,
-                    &layer.quads_ranges,
-                );
-                Self::render_layer_text(pass, layer, &self.text_resources);
+                    self.quad_renderer.draw(pass, texture, range.clone());
+                }
+                DrawRange::Text(layer) => {
+                    match self.text_renderers[*layer].render(
+                        &self.text_resources.atlas,
+                        &self.text_resources.viewport,
+                        pass,
+                    ) {
+                        Ok(()) => (),
+                        Err(RenderError::RemovedFromAtlas) => {
+                            log::warn!("failed to render text: a glyph was removed from the atlas")
+                        }
+                        Err(RenderError::ScreenResolutionChanged) => {
+                            log::warn!("failed to render text: screen resolution changed")
+                        }
+                    }
+                    quads_pipeline_bound = false;
+                }
             }
         }
     }
