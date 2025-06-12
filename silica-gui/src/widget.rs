@@ -628,7 +628,7 @@ impl ExclusiveGroup {
         } else {
             ButtonTheme::Normal
         };
-        let container = gui.create_container(container_layout);
+        let container = gui.create_node(container_layout);
         for (index, label) in labels.into_iter().enumerate() {
             let button = Button::create_exclusive(
                 gui,

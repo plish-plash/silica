@@ -250,16 +250,16 @@ pub trait WidgetBuilder {
 }
 
 #[derive(Default)]
-pub struct Container {
+pub struct Node {
     pub layout: Style,
 }
 
-impl Container {
-    pub fn create(gui: &mut Gui, properties: Container) -> NodeId {
-        gui.create_container(properties.layout)
+impl Node {
+    pub fn create(gui: &mut Gui, properties: Node) -> NodeId {
+        gui.create_node(properties.layout)
     }
 }
-impl WidgetBuilder for Container {
+impl WidgetBuilder for Node {
     type Properties<'a> = Self;
 }
 
@@ -384,7 +384,7 @@ impl Gui {
         )
     }
     #[must_use]
-    pub fn create_container(&mut self, layout: Style) -> NodeId {
+    pub fn create_node(&mut self, layout: Style) -> NodeId {
         self.tree.new_leaf(layout).unwrap()
     }
     pub fn set_node_widget<W: Widget>(&mut self, node: NodeId, widget: W) -> WidgetId<W> {

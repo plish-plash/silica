@@ -7,9 +7,9 @@ fn build_gui(gui: &mut Gui) -> NodeId {
         Label(font_size: 24.0, text: "Hello, World!")
     };
     let root = gui! {
-        Container(layout: layout!(padding: Rect::length(16.0), gap: Size::length(16.0), align_items: Some(AlignItems::Stretch), flex_direction: FlexDirection::Column)) {
+        Node(layout: layout!(padding: Rect::length(16.0), gap: Size::length(16.0), align_items: Some(AlignItems::Stretch), flex_direction: FlexDirection::Column)) {
             label,
-            Container(layout: layout!(gap: Size::length(16.0))) {
+            Node(layout: layout!(gap: Size::length(16.0))) {
                 Button(label: Some("Normal Button"), layout: layout!(flex_grow: 1.0)) |gui| {
                     label.set_text(gui, "Pressed Normal Button");
                 },
