@@ -6,12 +6,13 @@ use silica_wgpu::{draw::*, wgpu, Context, Texture, TextureConfig, TextureRect, T
 
 use crate::{
     render::{GuiBatcher, Quad},
-    ButtonState, ButtonTheme, Rect,
+    ButtonState, ButtonTheme, Rect, SideOffsets,
 };
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ThemeColor {
     Background,
+    Border,
     Accent,
     Text,
     Custom(Rgba),
@@ -20,7 +21,7 @@ pub enum ThemeColor {
 pub trait Theme {
     fn color(&self, color: ThemeColor) -> Rgba;
     fn button_text_color(&self, state: ButtonState) -> Rgba;
-    fn draw_border(&self, batcher: &mut GuiBatcher, rect: Rect);
+    fn draw_border(&self, batcher: &mut GuiBatcher, rect: Rect, border: SideOffsets);
     fn draw_gutter(&self, batcher: &mut GuiBatcher, rect: Rect);
     fn draw_button(
         &self,
@@ -124,6 +125,7 @@ impl Theme for StandardTheme {
     fn color(&self, color: ThemeColor) -> Rgba {
         match color {
             ThemeColor::Background => self.palette.background_color,
+            ThemeColor::Border => self.palette.border_color,
             ThemeColor::Accent => self.palette.accent_color,
             ThemeColor::Text => self.palette.text_color,
             ThemeColor::Custom(rgba) => rgba,
@@ -132,8 +134,9 @@ impl Theme for StandardTheme {
     fn button_text_color(&self, state: ButtonState) -> Rgba {
         Self::state_color(self.palette.text_color, state)
     }
-    fn draw_border(&self, batcher: &mut GuiBatcher, rect: Rect) {
-        draw_border(batcher, rect.cast_unit(), self.palette.border_color);
+    fn draw_border(&self, batcher: &mut GuiBatcher, rect: Rect, border: SideOffsets) {
+        let border = SideOffsets2D::new(border.top, border.right, border.bottom, border.left);
+        draw_border(batcher, rect.cast_unit(), border, self.palette.border_color);
     }
     fn draw_gutter(&self, batcher: &mut GuiBatcher, rect: Rect) {
         self.gutter.draw(batcher, rect.cast_unit(), Rgba::WHITE);

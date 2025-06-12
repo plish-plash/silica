@@ -1,4 +1,4 @@
-use euclid::point2;
+use euclid::{point2, vec2};
 use silica_color::Rgba;
 
 use crate::{Texture, TextureRect, TextureSize, Uv, UvRect};
@@ -28,7 +28,6 @@ where
     }
 }
 
-type Vector = euclid::default::Vector2D<f32>;
 type Rect = euclid::default::Box2D<f32>;
 type SideOffsets = euclid::default::SideOffsets2D<f32>;
 
@@ -36,20 +35,31 @@ pub trait DrawQuad {
     fn draw_quad(&mut self, rect: Rect, uv: UvRect, color: Rgba);
 }
 
-pub fn draw_border(drawer: &mut impl DrawQuad, mut rect: Rect, color: Rgba) {
-    const ONE: Vector = Vector::new(1.0, 1.0);
-    rect.max -= ONE;
+pub fn draw_border(drawer: &mut impl DrawQuad, mut rect: Rect, border: SideOffsets, color: Rgba) {
+    rect.max -= vec2(1.0, 1.0);
     if rect.is_empty() {
         return;
     }
-    let p0 = rect.top_left();
-    let p1 = rect.top_right();
-    let p2 = rect.bottom_right();
-    let p3 = rect.bottom_left();
-    drawer.draw_quad(Rect::new(p0, p1 + ONE), Uv::ZERO, color);
-    drawer.draw_quad(Rect::new(p1, p2 + ONE), Uv::ZERO, color);
-    drawer.draw_quad(Rect::new(p0, p3 + ONE), Uv::ZERO, color);
-    drawer.draw_quad(Rect::new(p3, p2 + ONE), Uv::ZERO, color);
+    let tl = rect.top_left();
+    let tr = rect.top_right();
+    let bl = rect.bottom_left();
+    let br = rect.bottom_right();
+    if border.top > 0.0 {
+        drawer.draw_quad(Rect::new(tl, tr + vec2(0.0, border.top)), Uv::ZERO, color);
+    }
+    if border.bottom > 0.0 {
+        drawer.draw_quad(
+            Rect::new(bl - vec2(0.0, border.bottom), br),
+            Uv::ZERO,
+            color,
+        );
+    }
+    if border.left > 0.0 {
+        drawer.draw_quad(Rect::new(tl, bl + vec2(border.left, 0.0)), Uv::ZERO, color);
+    }
+    if border.right > 0.0 {
+        drawer.draw_quad(Rect::new(tr - vec2(border.right, 0.0), br), Uv::ZERO, color);
+    }
 }
 
 pub struct NineSlice {

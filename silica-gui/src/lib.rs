@@ -26,22 +26,25 @@ pub type Rect = euclid::Box2D<f32, silica_wgpu::Surface>;
 pub type SideOffsets = euclid::SideOffsets2D<f32, silica_wgpu::Surface>;
 
 trait LayoutExt {
-    fn border_box(&self) -> Rect;
-    fn content_box(&self) -> Rect;
+    fn rect(&self) -> Rect;
+    fn border(&self) -> SideOffsets;
     fn padding(&self) -> SideOffsets;
+    fn content_rect(&self) -> Rect;
 }
 
 impl LayoutExt for Layout {
-    fn border_box(&self) -> Rect {
+    fn rect(&self) -> Rect {
         Rect::from_origin_and_size(
             Point::new(self.location.x, self.location.y),
             euclid::Size2D::new(self.size.width, self.size.height),
         )
     }
-    fn content_box(&self) -> Rect {
-        Rect::from_origin_and_size(
-            Point::new(self.content_box_x(), self.content_box_y()),
-            euclid::Size2D::new(self.content_box_width(), self.content_box_height()),
+    fn border(&self) -> SideOffsets {
+        SideOffsets::new(
+            self.border.top,
+            self.border.right,
+            self.border.bottom,
+            self.border.left,
         )
     }
     fn padding(&self) -> SideOffsets {
@@ -51,6 +54,11 @@ impl LayoutExt for Layout {
             self.padding.bottom,
             self.padding.left,
         )
+    }
+    fn content_rect(&self) -> Rect {
+        self.rect()
+            .inner_box(self.border())
+            .inner_box(self.padding())
     }
 }
 
@@ -201,7 +209,7 @@ pub trait Widget: Upcast + 'static {
     ) -> taffy::Size<f32> {
         taffy::Size::ZERO
     }
-    fn layout(&mut self, font_system: &mut FontSystem, rect: Rect) {}
+    fn layout(&mut self, font_system: &mut FontSystem, content_rect: Rect) {}
     fn input(&mut self, input: &GuiInput, executor: &mut EventExecutor, rect: Rect) -> InputAction {
         InputAction::Pass
     }
@@ -211,12 +219,20 @@ pub trait Widget: Upcast + 'static {
     fn separate_layer(&self) -> bool {
         false
     }
-    fn draw<'a>(
+    fn draw_background<'a>(
         &'a self,
         batcher: &mut GuiBatcher<'a>,
         theme: &dyn theme::Theme,
         rect: Rect,
-        padding: SideOffsets,
+        border: SideOffsets,
+    ) {
+        theme.draw_border(batcher, rect, border);
+    }
+    fn draw<'a>(
+        &'a self,
+        batcher: &mut GuiBatcher<'a>,
+        theme: &dyn theme::Theme,
+        content_rect: Rect,
     );
 }
 
@@ -262,12 +278,25 @@ impl<T> From<WidgetId<T>> for NodeId {
     }
 }
 
+struct WidgetLayout {
+    node: NodeId,
+    rect: Rect,
+    border: SideOffsets,
+    padding: SideOffsets,
+}
+
+impl WidgetLayout {
+    fn content_rect(&self) -> Rect {
+        self.rect.inner_box(self.border).inner_box(self.padding)
+    }
+}
+
 pub struct Gui {
     font_system: FontSystem,
     tree: TaffyTree<Box<dyn Widget>>,
     root: NodeId,
     available_space: taffy::Size<AvailableSpace>,
-    layouts: Vec<Vec<(NodeId, Rect, SideOffsets)>>,
+    layouts: Vec<Vec<WidgetLayout>>,
     input: GuiInput,
     grabbed_node: Option<NodeId>,
     draw_dirty: bool,
@@ -404,33 +433,35 @@ impl Gui {
             height: AvailableSpace::Definite(size.height as f32),
         });
     }
-    fn update_layout_data(
-        tree: &TaffyTree<Box<dyn Widget>>,
-        layouts: &mut Vec<Vec<(NodeId, Rect, SideOffsets)>>,
-        node: NodeId,
-        mut layer: usize,
-        mut offset: Vector,
-    ) {
-        let (is_widget, visible, separate_layer) = tree
-            .get_node_context(node)
-            .map(|widget| (true, widget.visible(), widget.separate_layer()))
-            .unwrap_or((false, true, false));
-        if visible {
-            let layout = tree.get_final_layout(node);
-            if is_widget {
-                let rect = layout.content_box().translate(offset);
-                if separate_layer {
+    fn update_layout_data(&mut self, node: NodeId, mut layer: usize, mut offset: Vector) {
+        let mut visible = true;
+        let layout = self.tree.get_final_layout(node);
+        let rect = layout.rect().translate(offset);
+        offset.x += layout.location.x;
+        offset.y += layout.location.y;
+        let layout = WidgetLayout {
+            node,
+            rect,
+            border: layout.border(),
+            padding: layout.padding(),
+        };
+        if let Some(widget) = self.tree.get_node_context_mut(node) {
+            visible = widget.visible();
+            if visible {
+                widget.layout(&mut self.font_system, layout.content_rect());
+                if widget.separate_layer() {
                     layer += 1;
                 }
-                if layer >= layouts.len() {
-                    layouts.push(Vec::new());
+                if layer >= self.layouts.len() {
+                    self.layouts.push(Vec::new());
                 }
-                layouts[layer].push((node, rect, layout.padding()));
+                self.layouts[layer].push(layout);
             }
-            offset.x += layout.location.x;
-            offset.y += layout.location.y;
-            for child in tree.child_ids(node) {
-                Self::update_layout_data(tree, layouts, child, layer, offset);
+        }
+        if visible {
+            for child_index in 0..self.tree.child_count(node) {
+                let child = self.tree.child_at_index(node, child_index).unwrap();
+                self.update_layout_data(child, layer, offset);
             }
         }
     }
@@ -458,13 +489,13 @@ impl Gui {
             )
             .unwrap();
         self.layouts.clear();
-        Self::update_layout_data(&self.tree, &mut self.layouts, self.root, 0, Vector::zero());
+        self.update_layout_data(self.root, 0, Vector::zero());
         self.draw_dirty = true;
     }
     pub fn get_rect(&self, node: impl Into<NodeId>) -> Rect {
         let mut node = node.into();
         let layout = self.tree.get_final_layout(node);
-        let mut rect = layout.content_box();
+        let mut rect = layout.content_rect();
         while let Some(parent) = self.tree.parent(node) {
             let parent_layout = self.tree.get_final_layout(parent);
             rect = rect.translate(Vector::new(
@@ -515,13 +546,13 @@ impl Gui {
                 &mut executor,
             );
         } else {
-            for (node, rect, _) in self.layouts.iter().flatten().rev() {
+            for layout in self.layouts.iter().flatten().rev() {
                 Self::dispatch_input_event(
                     &mut self.tree,
                     &mut self.input,
                     &mut self.grabbed_node,
-                    *node,
-                    *rect,
+                    layout.node,
+                    layout.rect,
                     &mut executor,
                 );
             }

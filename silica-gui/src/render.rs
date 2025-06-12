@@ -354,9 +354,15 @@ impl GuiRenderer {
                 }
                 let mut batcher =
                     GuiBatcher::new(index, &mut self.quads, &mut self.text_renderers[index]);
-                for (node, rect, padding) in layer.iter() {
-                    if let Some(widget) = gui.tree.get_node_context(*node) {
-                        widget.draw(&mut batcher, self.theme.as_ref(), *rect, *padding);
+                for layout in layer.iter() {
+                    if let Some(widget) = gui.tree.get_node_context(layout.node) {
+                        widget.draw_background(
+                            &mut batcher,
+                            self.theme.as_ref(),
+                            layout.rect,
+                            layout.border,
+                        );
+                        widget.draw(&mut batcher, self.theme.as_ref(), layout.content_rect());
                     }
                 }
                 batcher.commit(

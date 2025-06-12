@@ -56,21 +56,23 @@ impl Widget for Visible {
     fn separate_layer(&self) -> bool {
         self.separate_layer
     }
-    fn draw<'a>(
+    fn draw_background<'a>(
         &'a self,
         batcher: &mut GuiBatcher<'a>,
         theme: &dyn Theme,
         rect: Rect,
-        padding: SideOffsets,
+        border: SideOffsets,
     ) {
         if let Some(background) = self.background {
             batcher.queue_theme_quad(Quad {
-                rect: rect.outer_box(padding),
+                rect: rect.inner_box(border),
                 uv: Uv::ZERO,
                 color: theme.color(background),
             });
         }
+        theme.draw_border(batcher, rect, border);
     }
+    fn draw<'a>(&'a self, _batcher: &mut GuiBatcher<'a>, _theme: &dyn Theme, _content_rect: Rect) {}
 }
 impl WidgetBuilder for Visible {
     type Properties<'a> = VisibleProperties;
@@ -208,22 +210,20 @@ impl Widget for Label {
                 (run.line_w.max(width), total_lines + 1)
             });
         let height = total_lines as f32 * self.0.metrics().line_height;
-        Size { width, height }
+        Size {
+            width: width.ceil(),
+            height,
+        }
     }
-    fn layout(&mut self, font_system: &mut FontSystem, rect: Rect) {
-        self.0.set_size(font_system, Some(rect.width()), None);
+    fn layout(&mut self, font_system: &mut FontSystem, content_rect: Rect) {
+        self.0
+            .set_size(font_system, Some(content_rect.width()), None);
     }
-    fn draw<'a>(
-        &'a self,
-        batcher: &mut GuiBatcher<'a>,
-        theme: &dyn Theme,
-        rect: Rect,
-        _padding: SideOffsets,
-    ) {
+    fn draw<'a>(&'a self, batcher: &mut GuiBatcher<'a>, theme: &dyn Theme, content_rect: Rect) {
         batcher.queue_text(TextArea {
             buffer: &self.0,
-            left: rect.min.x,
-            top: rect.min.y,
+            left: content_rect.min.x,
+            top: content_rect.min.y,
             scale: 1.0,
             bounds: TextBounds::default(),
             default_color: glyphon::Color(theme.color(ThemeColor::Text).to_u32()),
@@ -496,13 +496,7 @@ impl Widget for Button {
         }
         action.input_action
     }
-    fn draw<'a>(
-        &'a self,
-        batcher: &mut GuiBatcher<'a>,
-        theme: &dyn Theme,
-        rect: Rect,
-        _padding: SideOffsets,
-    ) {
+    fn draw<'a>(&'a self, batcher: &mut GuiBatcher<'a>, theme: &dyn Theme, content_rect: Rect) {
         let button_theme = if self.on_clicked.is_toggle() {
             if self.theme == ButtonTheme::Tab {
                 if self.toggled {
@@ -518,7 +512,7 @@ impl Widget for Button {
         } else {
             self.theme
         };
-        theme.draw_button(batcher, rect, button_theme, self.state);
+        theme.draw_button(batcher, content_rect, button_theme, self.state);
     }
 }
 impl WidgetBuilder for Button {
