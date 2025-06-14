@@ -1,40 +1,48 @@
 //! Usually, linear RGBA is all you need.
 //!
-//! When you start to learn about how computers use color, all the options quickly become overwhelming. Is my image encoded in
-//! linear RGB or sRGB? When do I premultiply alpha? Most of the color-related Rust crates out there provide all sorts
-//! of color spaces and allow you to easily convert between them, so you can use whatever color space is most appropriate.
+//! When you start to learn about how computers use color, all the options quickly become
+//! overwhelming. Is my image encoded in linear RGB or sRGB? When do I premultiply alpha? Most of
+//! the color-related Rust crates out there provide all sorts of color spaces and allow you to
+//! easily convert between them, so you can use whatever color space is most appropriate.
 //!
-//! However, for modern rendering systems, you should use linear RGB basically all of the time. Colors must be in linear space
-//! to be blended correctly. Shaders will convert all input colors to linear if they aren't already, and the graphics pipeline
-//! will automatically convert the output to whatever the screen is expecting. So it's typically much simpler to use
-//! linear colors everywhere. That way CPU-side color operations behave the same way they do in shaders, and there's no
-//! need to do any conversion yourself.
+//! However, for modern rendering systems, you should use linear RGB basically all of the time.
+//! Colors must be in linear space to be blended correctly. Shaders will convert all input colors to
+//! linear if they aren't already, and the graphics pipeline will automatically convert the output
+//! to whatever the screen is expecting. So it's typically much simpler to use linear colors
+//! everywhere. That way CPU-side color operations behave the same way they do in shaders, and
+//! there's no need to do any conversion yourself.
 //!
-//! But, I hear you asking, what about when I load an image file, or let a user type in a hex code? Aren't those in sRGB?
+//! But, I hear you asking, what about when I load an image file, or let a user type in a hex code?
+//! Aren't those in sRGB? It's true that image formats like png can specify a color space, and the
+//! color space of hex codes depends on the application that created them. But in practice, these
+//! are nearly always in linear RGB, despite what many sources claim. Artists already need to work
+//! in linear space for blending to make sense, so why bother converting to sRGB?
+//! sRGB (and premultiplied alpha) should be viewed as an implementation detail of the rendering
+//! system, not a standard for storage.
 //!
-//! Actually, no. It's true that image formats like png can specify a color space, and the color space of hex codes depends
-//! on the application that created them. But in practice, these are nearly always in linear RGB, despite what many sources
-//! claim. Artists already need to work in linear space for blending to make sense, so why bother converting to sRGB?
-//! sRGB (and premultiplied alpha) should be viewed as an implementation detail of the rendering system, not a standard
-//! for storage.
+//! This crate provides `Rgba` for working with linear RGBA. It contains four f32s and is repr(C),
+//! which is what most graphics pipelines expect. It provides all the operations needed for typical
+//! rendering applications.
 //!
-//! This crate provides `Rgba` for working with linear RGBA. It contains four f32s and is repr(C), which is what most graphics
-//! pipelines expect. It provides all the operations needed for typical rendering applications.
-//!
-//! This crate is designed for applications that need a simple, universal color type. It is not designed for advanced color
-//! manipulation or image processing, for that consider `palette` or `color`.
+//! This crate is designed for applications that need a simple, universal color type. It is not
+//! designed for advanced color manipulation or image processing, for that consider `palette` or
+//! `color`.
 //!
 //! ### Why another color crate?
 //!
-//! Yes, Rust has quite a few color crates already, why make another one? The answer is that all of the color crates I've seen
-//! are *heavily* focused on color space management and conversion, and often fall flat if you need to do more than the simplest
-//! of operations on the colors themselves. Here are some specific needs I have:
-//! - I need to be able to serialize and deserialize colors with a simple structure. Alpha should default to 1 if not specified, since opaque colors are very common.
+//! Yes, Rust has quite a few color crates already, why make another one? The answer is that all of
+//! the color crates I've seen are *heavily* focused on color space management and conversion, and
+//! often fall flat if you need to do more than the simplest of operations on the colors themselves.
+//! Here are some specific needs I have:
+//! - I need to be able to serialize and deserialize colors with a simple structure. Alpha should
+//!   default to 1 if not specified, since opaque colors are very common.
 //! - I need to be able to convert to and from u32 hex codes.
-//! - I rarely, if ever, want to store colors as u8s, since they need to be converted to f32s for many operations (and rendering).
+//! - I rarely, if ever, want to store colors as u8s, since they need to be converted to f32s for
+//!   many operations (and rendering).
 //! - I need constants for black and white.
 //!
-//! These requirements seem quite minimal, but I wasn't able to find a crate that satisfied them all. So, here we are.
+//! These requirements seem quite minimal, but I wasn't able to find a crate that satisfied them
+//! all. So, here we are.
 
 use std::hash::{Hash, Hasher};
 

@@ -4,7 +4,6 @@ mod texture;
 use std::{marker::PhantomData, num::NonZero};
 
 use euclid::point2;
-
 pub use texture::*;
 pub use wgpu;
 
@@ -128,7 +127,8 @@ impl Context {
             &None,
         )
         .await;
-        // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the surface.
+        // Make sure we use the texture resolution limits from the adapter, so we can support images
+        // the size of the surface.
         let needed_limits = features.required_limits.using_resolution(adapter.limits());
 
         let (device, queue) = adapter

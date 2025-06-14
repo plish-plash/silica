@@ -8,16 +8,19 @@ use std::{
     rc::Rc,
 };
 
-use glyphon::FontSystem;
-use silica_wgpu::SurfaceSize;
-use taffy::{AvailableSpace, Layout, PrintTree, Style, TaffyTree, TraversePartialTree};
-
 pub use glyphon;
-pub use render::*;
+use glyphon::FontSystem;
 pub use silica_color::Rgba;
 pub use silica_gui_macros::*;
+use silica_wgpu::SurfaceSize;
 pub use taffy::{self, NodeId};
-pub use widget::*;
+use taffy::{AvailableSpace, Layout, PrintTree, Style, TaffyTree, TraversePartialTree};
+
+pub use crate::{
+    render::*,
+    theme::{Theme, ThemeColor},
+    widget::*,
+};
 
 pub type Point = euclid::Point2D<f32, silica_wgpu::Surface>;
 pub type Vector = euclid::Vector2D<f32, silica_wgpu::Surface>;
@@ -222,18 +225,13 @@ pub trait Widget: Upcast + 'static {
     fn draw_background<'a>(
         &'a self,
         batcher: &mut GuiBatcher<'a>,
-        theme: &dyn theme::Theme,
+        theme: &dyn Theme,
         rect: Rect,
         border: SideOffsets,
     ) {
         theme.draw_border(batcher, rect, border);
     }
-    fn draw<'a>(
-        &'a self,
-        batcher: &mut GuiBatcher<'a>,
-        theme: &dyn theme::Theme,
-        content_rect: Rect,
-    );
+    fn draw<'a>(&'a self, batcher: &mut GuiBatcher<'a>, theme: &dyn Theme, content_rect: Rect);
 }
 
 impl<T: Widget> Upcast for T {

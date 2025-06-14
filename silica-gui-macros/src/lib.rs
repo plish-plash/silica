@@ -126,31 +126,34 @@ impl ToTokens for Widget {
     }
 }
 
-/// Creates a `taffy::Style`. `taffy` must be in-scope. Arguments to the macro become the fields of a struct literal,
-/// with `..Default::default()` added if not present. For example:
+/// Creates a `taffy::Style`. `taffy` must be in-scope. Arguments to the macro become the fields of
+/// a struct literal, with `..Default::default()` added if not present. For example:
 /// ```layout!(flex_direction: FlexDirection::Row, padding: Rect::length(8.0))```
 /// becomes
 /// ```taffy::Style { flex_direction: taffy::FlexDirection::Row, padding: taffy::Rect::length(8.0), ..Default::default() }```
-/// The taffy prelude is in-scope inside of the macro, so none of the taffy types need to be imported.
+/// The taffy prelude is in-scope inside of the macro, so none of the taffy types need to be
+/// imported.
 #[proc_macro]
 pub fn layout(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let values = parse_macro_input!(input as StructValues);
     quote! {{ use taffy::prelude::*; Style { #values } }}.into()
 }
 
-/// Creates a gui node, optionally with children. The new node will be unparented and so should usually be given a parent
-/// with `gui.add_child` or made the root with `gui.set_root`. In order to use this macro, `WidgetBuilder` must be in-scope,
-/// as well as the widgets used. Additionally, there must be a `gui` variable in-scope with the type `&mut Gui`.
+/// Creates a gui node, optionally with children. The new node will be unparented and so should
+/// usually be given a parent with `gui.add_child` or made the root with `gui.set_root`. In order to
+/// use this macro, `WidgetBuilder` must be in-scope, as well as the widgets used. Additionally,
+/// there must be a `gui` variable in-scope with the type `&mut Gui`.
 ///
-/// This macro expands widget definitions, which look like `Widget(fields)`, into calls like `Widget::create(gui, WidgetProperties { fields })`.
-/// Similar to the `layout!` macro, the arguments inside the parentheses become the fields of a struct literal, with
-/// `..Default::default()` added if not present. The `WidgetProperties` type comes from the widget's `WidgetBuilder`
-/// implementation. You can use your own widgets with this macro by implementing `WidgetBuilder` and defining a `create`
-/// function.
+/// This macro expands widget definitions, which look like `Widget(fields)`, into calls like
+/// `Widget::create(gui, WidgetProperties { fields })`. Similar to the `layout!` macro, the
+/// arguments inside the parentheses become the fields of a struct literal, with
+/// `..Default::default()` added if not present. The `WidgetProperties` type comes from the widget's
+/// `WidgetBuilder` implementation. You can use your own widgets with this macro by implementing
+/// `WidgetBuilder` and defining a `create` function.
 ///
 /// Here is an example that creates a label:
 /// ```let label = gui! { Label(text: "Hello!", layout: layout!(flex_grow: 1.0)) };```
-///
+/// 
 /// Children can optionally be listed after the widget in braces, such as `Widget(fields) { child1, child2 }`. Children can be either
 /// widget definitions or expressions (such as variables). Here is an example that creates a container with two labels:
 /// ```let my_label = gui! { Label(text: username) };
@@ -161,10 +164,10 @@ pub fn layout(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 ///     }
 /// };```
 ///
-/// Finally, a closure can be specified after the widget (before children), and will be passed as a third argument to `create` if present.
-/// `move` will be added to this closure automatically. If the macro gives an error about "expected 3 arguments, found 2",
-/// you have forgotten a closure on one of your widgets. Here is an example that creates a button:
-/// ```let button = gui! {
+/// Finally, a closure can be specified after the widget (before children), and will be passed as a
+/// third argument to `create` if present. `move` will be added to this closure automatically. If
+/// the macro gives an error about "expected 3 arguments, found 2", you have forgotten a closure on
+/// one of your widgets. Here is an example that creates a button: ```let button = gui! {
 ///     Button(label: Some("Click Here!")) |_gui: &mut Gui| {
 ///         println!("button clicked");
 ///     }
