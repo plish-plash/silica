@@ -3,6 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use glyphon::{
     cosmic_text::Align, Attrs, Buffer, FontSystem, Metrics, Shaping, TextArea, TextBounds,
 };
+use silica_color::Rgba;
 use silica_wgpu::Uv;
 use taffy::{AlignItems, AvailableSpace, Dimension, NodeId, Size, Style};
 
@@ -147,6 +148,18 @@ impl Default for LabelProperties<'_> {
 pub struct Label(Buffer, Attrs<'static>, Option<Align>);
 
 impl Label {
+    pub fn buffer_size(buffer: &Buffer) -> Size<f32> {
+        let (width, total_lines) = buffer
+            .layout_runs()
+            .fold((0.0, 0usize), |(width, total_lines), run| {
+                (run.line_w.max(width), total_lines + 1)
+            });
+        let height = total_lines as f32 * buffer.metrics().line_height;
+        Size {
+            width: width.ceil(),
+            height: height.ceil(),
+        }
+    }
     pub fn new(
         font_system: &mut FontSystem,
         metrics: Metrics,
@@ -160,7 +173,7 @@ impl Label {
                 font_system,
                 [(text, attrs.clone())],
                 &attrs,
-                Shaping::Basic,
+                Shaping::Advanced,
                 alignment,
             );
         }
@@ -185,7 +198,22 @@ impl Label {
             font_system,
             [(text, self.1.clone())],
             &self.1,
-            Shaping::Basic,
+            Shaping::Advanced,
+            self.2,
+        );
+    }
+    pub fn set_text_and_color(
+        &mut self,
+        font_system: &mut FontSystem,
+        text: &str,
+        color: Option<Rgba>,
+    ) {
+        self.1.color_opt = color.map(|color| glyphon::Color(color.to_u32()));
+        self.0.set_rich_text(
+            font_system,
+            [(text, self.1.clone())],
+            &self.1,
+            Shaping::Advanced,
             self.2,
         );
     }
@@ -203,17 +231,7 @@ impl Widget for Label {
             AvailableSpace::Definite(width) => Some(width),
         });
         self.0.set_size(font_system, width_constraint, None);
-        let (width, total_lines) = self
-            .0
-            .layout_runs()
-            .fold((0.0, 0usize), |(width, total_lines), run| {
-                (run.line_w.max(width), total_lines + 1)
-            });
-        let height = total_lines as f32 * self.0.metrics().line_height;
-        Size {
-            width: width.ceil(),
-            height,
-        }
+        Self::buffer_size(&self.0)
     }
     fn layout(&mut self, font_system: &mut FontSystem, content_rect: Rect) {
         self.0
@@ -240,6 +258,13 @@ impl WidgetId<Label> {
             return;
         };
         label.set_text(font_system, text);
+        gui.mark_layout_dirty(*self);
+    }
+    pub fn set_text_and_color(&self, gui: &mut Gui, text: &str, color: Option<Rgba>) {
+        let Some((label, font_system)) = gui.get_widget_and_font_system(*self) else {
+            return;
+        };
+        label.set_text_and_color(font_system, text, color);
         gui.mark_layout_dirty(*self);
     }
 }
@@ -450,9 +475,14 @@ impl Button {
         button
     }
 
+    pub fn enabled(&self) -> bool {
+        self.state != ButtonState::Disable
+    }
     pub fn set_enabled(&mut self, enabled: bool) {
         if enabled {
-            self.state = ButtonState::Normal;
+            if self.state == ButtonState::Disable {
+                self.state = ButtonState::Normal;
+            }
         } else {
             self.state = ButtonState::Disable;
         }
@@ -519,6 +549,11 @@ impl WidgetBuilder for Button {
     type Properties<'a> = ButtonProperties<'a>;
 }
 impl WidgetId<Button> {
+    pub fn enabled(&self, gui: &Gui) -> bool {
+        gui.get_widget(*self)
+            .map(|button| button.enabled())
+            .unwrap_or(true)
+    }
     pub fn set_enabled(&self, gui: &mut Gui, enabled: bool) {
         let Some(button) = gui.get_widget_mut(*self) else {
             return;
@@ -529,7 +564,7 @@ impl WidgetId<Button> {
     pub fn toggled(&self, gui: &Gui) -> bool {
         gui.get_widget(*self)
             .map(|button| button.toggled())
-            .unwrap_or_default()
+            .unwrap_or(false)
     }
     pub fn set_toggled(&self, gui: &mut Gui, toggled: bool) {
         let Some(button) = gui.get_widget_mut(*self) else {

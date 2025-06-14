@@ -394,10 +394,15 @@ impl Gui {
         WidgetId(node, PhantomData)
     }
     pub fn delete(&mut self, node: impl Into<NodeId>) {
-        self.tree.remove(node.into()).unwrap();
+        let node = node.into();
+        self.delete_children(node);
+        self.tree.remove(node).unwrap();
     }
     pub fn delete_children(&mut self, parent: impl Into<NodeId>) {
-        self.tree.remove_children_range(parent.into(), ..).unwrap();
+        let children = self.tree.children(parent.into()).unwrap();
+        for child in children {
+            self.delete(child);
+        }
     }
     pub fn add_child(&mut self, parent: impl Into<NodeId>, child: impl Into<NodeId>) {
         self.tree.add_child(parent.into(), child.into()).unwrap();

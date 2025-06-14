@@ -161,10 +161,10 @@ impl QuadRenderer {
     }
 }
 
-struct TextResources {
-    swash_cache: glyphon::SwashCache,
-    atlas: glyphon::TextAtlas,
-    viewport: glyphon::Viewport,
+pub struct TextResources {
+    pub swash_cache: glyphon::SwashCache,
+    pub atlas: glyphon::TextAtlas,
+    pub viewport: glyphon::Viewport,
 }
 
 impl TextResources {
@@ -338,6 +338,9 @@ impl GuiRenderer {
         self.theme.color(ThemeColor::Background)
     }
 
+    pub fn text_resources(&mut self) -> &mut TextResources {
+        &mut self.text_resources
+    }
     pub fn render(&mut self, context: &Context, pass: &mut wgpu::RenderPass, gui: &mut Gui) {
         gui.layout();
         if gui.draw_dirty {
