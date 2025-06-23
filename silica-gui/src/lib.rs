@@ -65,12 +65,31 @@ impl LayoutExt for Layout {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Hotkey {
-    key: char,
-    shift: bool,
-    ctrl: bool,
-    alt: bool,
+    pub key: String,
+    pub mod_ctrl: bool,
+    pub mod_alt: bool,
+    pub mod_super: bool,
+}
+
+impl Hotkey {
+    pub fn new(key: &str) -> Self {
+        Hotkey {
+            key: key.to_string(),
+            mod_ctrl: false,
+            mod_alt: false,
+            mod_super: false,
+        }
+    }
+    pub fn with_ctrl(key: &str) -> Self {
+        Hotkey {
+            key: key.to_string(),
+            mod_ctrl: true,
+            mod_alt: false,
+            mod_super: false,
+        }
+    }
 }
 
 pub trait KeyboardEvent {

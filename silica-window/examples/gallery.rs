@@ -40,6 +40,12 @@ fn build_gui(gui: &mut Gui) -> NodeId {
         true,
         Some(1),
         ["One", "Two", "Three", "Four"],
+        Some(vec![
+            Hotkey::new("1"),
+            Hotkey::new("2"),
+            Hotkey::new("3"),
+            Hotkey::new("4"),
+        ]),
     );
     gui.add_child(root, tabs);
 

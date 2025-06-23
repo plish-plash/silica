@@ -10,14 +10,24 @@ use winit::{
     error::EventLoopError,
     event::{ElementState, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    keyboard::{ModifiersState, SmolStr},
     window::{Window, WindowId},
 };
 
-struct KeyboardEvent;
+struct KeyboardEvent(ElementState, SmolStr, ModifiersState);
 
 impl silica_gui::KeyboardEvent for KeyboardEvent {
     fn to_hotkey(&self) -> Option<Hotkey> {
-        todo!()
+        if self.0 == ElementState::Pressed {
+            Some(Hotkey {
+                key: self.1.to_string(),
+                mod_ctrl: self.2.control_key(),
+                mod_alt: self.2.alt_key(),
+                mod_super: self.2.super_key(),
+            })
+        } else {
+            None
+        }
     }
 }
 
@@ -69,10 +79,13 @@ struct App {
     surface: Surface,
     gui: Gui,
     gui_renderer: GuiRendererInit,
+    modifiers: ModifiersState,
 }
 
 impl App {
-    fn request_redraw_if_needed(&self) {
+    fn input_event(&mut self, event: InputEvent) {
+        let (executor, _) = self.gui.input_event(event);
+        executor.execute(&mut self.gui);
         if self.gui.dirty() {
             self.window.as_ref().unwrap().request_redraw();
         }
@@ -155,19 +168,31 @@ impl ApplicationHandler for App {
                 self.render();
             }
             WindowEvent::CursorMoved { position, .. } => {
-                let (events, _) = self.gui.input_event(InputEvent::MouseMotion(Point::new(
+                self.input_event(InputEvent::MouseMotion(Point::new(
                     position.x as f32,
                     position.y as f32,
                 )));
-                events.execute(&mut self.gui);
-                self.request_redraw_if_needed();
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                let (events, _) = self
-                    .gui
-                    .input_event(InputEvent::MouseButton(MouseButtonEvent(button, state)));
-                events.execute(&mut self.gui);
-                self.request_redraw_if_needed();
+                self.input_event(InputEvent::MouseButton(MouseButtonEvent(button, state)));
+            }
+            WindowEvent::KeyboardInput {
+                event,
+                is_synthetic: false,
+                ..
+            } => {
+                if !event.repeat {
+                    if let Some(text) = event.text {
+                        self.input_event(InputEvent::Keyboard(KeyboardEvent(
+                            event.state,
+                            text,
+                            self.modifiers,
+                        )));
+                    }
+                }
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers.state();
             }
             _ => {}
         }
@@ -198,6 +223,7 @@ pub fn run_app(gui: Gui, theme_loader: impl ThemeLoader) -> Result<(), EventLoop
         surface: Surface::new(),
         gui,
         gui_renderer: GuiRendererInit::Uninit(Some((texture_config, theme_texture, theme))),
+        modifiers: ModifiersState::empty(),
     };
     event_loop.run_app(&mut app)?;
     Ok(())

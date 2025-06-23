@@ -299,7 +299,7 @@ impl ButtonState {
     pub fn handle_input(
         &mut self,
         input: &GuiInput,
-        hotkey: Option<Hotkey>,
+        hotkey: Option<&Hotkey>,
         rect: Rect,
     ) -> ButtonStateAction {
         let pointer_over = !input.blocked && rect.contains(input.pointer);
@@ -316,7 +316,7 @@ impl ButtonState {
             };
         }
         let mut changed = false;
-        let hotkey_pressed = input.hotkey.is_some() && input.hotkey == hotkey;
+        let hotkey_pressed = input.hotkey.is_some() && input.hotkey.as_ref() == hotkey;
         if !hotkey_pressed && !input.grabbed && !pointer_over {
             if *self != ButtonState::Normal {
                 *self = ButtonState::Normal;
@@ -352,6 +352,7 @@ pub struct ButtonProperties<'a> {
     pub layout: Style,
     pub theme: ButtonTheme,
     pub enabled: bool,
+    pub hotkey: Option<Hotkey>,
     pub label: Option<&'a str>,
 }
 
@@ -361,6 +362,7 @@ impl Default for ButtonProperties<'_> {
             layout: Default::default(),
             theme: ButtonTheme::Normal,
             enabled: true,
+            hotkey: None,
             label: None,
         }
     }
@@ -382,6 +384,7 @@ impl ButtonEvent {
 pub struct Button {
     theme: ButtonTheme,
     state: ButtonState,
+    hotkey: Option<Hotkey>,
     toggled: bool,
     on_clicked: ButtonEvent,
 }
@@ -398,6 +401,7 @@ impl Button {
         Button {
             theme,
             state: ButtonState::Normal,
+            hotkey: None,
             toggled: false,
             on_clicked: ButtonEvent::Normal(EventFn::new(on_clicked)),
         }
@@ -410,6 +414,7 @@ impl Button {
         Button {
             theme,
             state: ButtonState::Normal,
+            hotkey: None,
             toggled,
             on_clicked: ButtonEvent::Toggle(EventFn::new_param(on_clicked)),
         }
@@ -418,6 +423,7 @@ impl Button {
         Button {
             theme,
             state: ButtonState::Normal,
+            hotkey: None,
             toggled: state,
             on_clicked: ButtonEvent::Exclusive(group.clone(), group.next_index()),
         }
@@ -438,6 +444,7 @@ impl Button {
         F: Fn(&mut C) + 'static,
     {
         let mut button = Self::new(properties.theme, on_clicked);
+        button.hotkey = properties.hotkey;
         button.set_enabled(properties.enabled);
         let button = gui.create_widget(
             Style {
@@ -457,6 +464,8 @@ impl Button {
         properties: ToggleButtonProperties,
         group: &Rc<ExclusiveGroup>,
     ) -> WidgetId<Self> {
+        let mut button = Self::new_exclusive(properties.theme, properties.toggled, group);
+        button.hotkey = properties.hotkey;
         let button = gui.create_widget(
             Style {
                 min_size: Size {
@@ -466,7 +475,7 @@ impl Button {
                 align_items: Some(AlignItems::Center),
                 ..properties.layout
             },
-            Self::new_exclusive(properties.theme, properties.toggled, group),
+            button,
         );
         if let Some(label) = properties.label {
             Self::create_label(gui, button, label);
@@ -496,7 +505,7 @@ impl Button {
 }
 impl Widget for Button {
     fn input(&mut self, input: &GuiInput, executor: &mut EventExecutor, rect: Rect) -> InputAction {
-        let action = self.state.handle_input(input, None, rect);
+        let action = self.state.handle_input(input, self.hotkey.as_ref(), rect);
         if action.changed {
             executor.mark_draw_dirty();
         }
@@ -580,6 +589,7 @@ pub struct ToggleButtonProperties<'a> {
     pub layout: Style,
     pub theme: ButtonTheme,
     pub toggled: bool,
+    pub hotkey: Option<Hotkey>,
     pub label: Option<&'a str>,
 }
 
@@ -654,6 +664,7 @@ impl ExclusiveGroup {
         tabs: bool,
         selected: Option<usize>,
         labels: I,
+        hotkeys: Option<Vec<Hotkey>>,
     ) -> NodeId
     where
         I: IntoIterator<Item: AsRef<str>>,
@@ -665,12 +676,17 @@ impl ExclusiveGroup {
         };
         let container = gui.create_node(container_layout);
         for (index, label) in labels.into_iter().enumerate() {
+            let hotkey = hotkeys
+                .as_ref()
+                .and_then(|hotkeys| hotkeys.get(index))
+                .cloned();
             let button = Button::create_exclusive(
                 gui,
                 ToggleButtonProperties {
                     layout: button_layout.clone(),
                     theme,
                     toggled: selected == Some(index),
+                    hotkey,
                     label: Some(label.as_ref()),
                 },
                 self,
