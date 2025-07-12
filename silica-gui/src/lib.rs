@@ -11,9 +11,12 @@ use std::{
 pub use glyphon;
 use glyphon::FontSystem;
 pub use silica_color::Rgba;
-pub use silica_gui_macros::*;
 use silica_wgpu::SurfaceSize;
-pub use taffy::{self, NodeId};
+pub use taffy::{
+    self,
+    style_helpers::{auto, length, percent, zero},
+    AlignItems, FlexDirection, JustifyContent, NodeId,
+};
 use taffy::{AvailableSpace, Layout, PrintTree, Style, TaffyTree, TraversePartialTree};
 
 pub use crate::{
@@ -65,29 +68,19 @@ impl LayoutExt for Layout {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Hotkey {
-    pub key: String,
-    pub mod_ctrl: bool,
-    pub mod_alt: bool,
-    pub mod_super: bool,
+    pub key: char,
+    pub mod1: bool,
+    pub mod2: bool,
 }
 
 impl Hotkey {
-    pub fn new(key: &str) -> Self {
+    pub fn new(key: char) -> Self {
         Hotkey {
-            key: key.to_string(),
-            mod_ctrl: false,
-            mod_alt: false,
-            mod_super: false,
-        }
-    }
-    pub fn with_ctrl(key: &str) -> Self {
-        Hotkey {
-            key: key.to_string(),
-            mod_ctrl: true,
-            mod_alt: false,
-            mod_super: false,
+            key,
+            mod1: false,
+            mod2: false,
         }
     }
 }
@@ -262,24 +255,6 @@ impl<T: Widget> Upcast for T {
     }
 }
 
-pub trait WidgetBuilder {
-    type Properties<'a>;
-}
-
-#[derive(Default)]
-pub struct Node {
-    pub layout: Style,
-}
-
-impl Node {
-    pub fn create(gui: &mut Gui, properties: Node) -> NodeId {
-        gui.create_node(properties.layout)
-    }
-}
-impl WidgetBuilder for Node {
-    type Properties<'a> = Self;
-}
-
 #[derive(PartialEq, Eq, Hash)]
 pub struct WidgetId<T>(NodeId, PhantomData<T>);
 
@@ -324,7 +299,7 @@ impl Gui {
         let mut tree = TaffyTree::new();
         let root = tree
             .new_leaf(Style {
-                size: taffy::Size::percent(1.0),
+                size: percent(1.0),
                 ..Default::default()
             })
             .unwrap();
@@ -347,7 +322,7 @@ impl Gui {
     }
     pub fn set_root(&mut self, root: NodeId) {
         let mut layout = self.tree.style(root).unwrap().clone();
-        layout.size = taffy::Size::percent(1.0);
+        layout.size = percent(1.0);
         self.tree.set_style(root, layout).unwrap();
         self.root = root;
     }
@@ -356,7 +331,7 @@ impl Gui {
         self.root = self
             .tree
             .new_leaf(Style {
-                size: taffy::Size::percent(1.0),
+                size: percent(1.0),
                 ..Default::default()
             })
             .unwrap();
@@ -404,6 +379,10 @@ impl Gui {
     pub fn create_node(&mut self, layout: Style) -> NodeId {
         self.tree.new_leaf(layout).unwrap()
     }
+    #[must_use]
+    pub fn create_node_with_children(&mut self, layout: Style, children: &[NodeId]) -> NodeId {
+        self.tree.new_with_children(layout, children).unwrap()
+    }
     pub fn set_node_widget<W: Widget>(&mut self, node: NodeId, widget: W) -> WidgetId<W> {
         self.tree
             .set_node_context(node, Some(Box::new(widget)))
@@ -430,7 +409,7 @@ impl Gui {
     pub fn set_layout(&mut self, node: impl Into<NodeId>, mut layout: Style) {
         let node = node.into();
         if node == self.root {
-            layout.size = taffy::Size::percent(1.0);
+            layout.size = percent(1.0);
         }
         self.tree.set_style(node, layout).unwrap();
     }

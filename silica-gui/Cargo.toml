@@ -1,10 +1,9 @@
 [package]
 name = "silica-gui"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-silica-gui-macros = { path = "../silica-gui-macros" }
 silica-color = { path = "../silica-color" }
 silica-wgpu = { path = "../silica-wgpu" }
 serde = { version = "1.0", features = ["derive"] }

@@ -8,46 +8,202 @@ use silica_wgpu::Uv;
 use taffy::{AlignItems, AvailableSpace, Dimension, NodeId, Size, Style};
 
 use crate::{
-    gui, layout,
     theme::{Theme, ThemeColor},
     EventExecutor, EventFn, Gui, GuiBatcher, GuiInput, Hotkey, InputAction, Quad, Rect,
-    SideOffsets, Widget, WidgetBuilder, WidgetId,
+    SideOffsets, Widget, WidgetId,
 };
 
-pub struct VisibleProperties {
+#[derive(Default)]
+pub struct NodeBuilderBase {
     pub layout: Style,
-    pub visible: bool,
-    pub separate_layer: bool,
-    pub background: Option<ThemeColor>,
+    pub parent: Option<NodeId>,
+    pub children: Vec<NodeId>,
 }
 
-impl Default for VisibleProperties {
-    fn default() -> Self {
-        Self {
-            layout: Style::default(),
+impl NodeBuilderBase {
+    pub fn build(self, gui: &mut Gui) -> NodeId {
+        let node = gui.create_node_with_children(self.layout, &self.children);
+        if let Some(parent) = self.parent {
+            gui.add_child(parent, node);
+        }
+        node
+    }
+    pub fn build_widget<W: Widget>(self, gui: &mut Gui, widget: W) -> WidgetId<W> {
+        self.build_widget_with_layout(gui, widget, |layout| layout)
+    }
+    pub fn build_widget_with_layout<W, F>(self, gui: &mut Gui, widget: W, f: F) -> WidgetId<W>
+    where
+        W: Widget,
+        F: FnOnce(Style) -> Style,
+    {
+        let node = gui.create_node_with_children(f(self.layout), &self.children);
+        if let Some(parent) = self.parent {
+            gui.add_child(parent, node);
+        }
+        gui.set_node_widget(node, widget)
+    }
+}
+
+#[macro_export]
+macro_rules! impl_node_builder {
+    ($name:ty) => {
+        impl $name {
+            pub fn layout(mut self, layout: Style) -> Self {
+                self.node.layout = layout;
+                self
+            }
+            pub fn size(mut self, size: $crate::taffy::Size<$crate::taffy::Dimension>) -> Self {
+                self.node.layout.size = size;
+                self
+            }
+            pub fn width(mut self, width: f32) -> Self {
+                self.node.layout.size.width = $crate::taffy::Dimension::length(width);
+                self
+            }
+            pub fn height(mut self, height: f32) -> Self {
+                self.node.layout.size.height = $crate::taffy::Dimension::length(height);
+                self
+            }
+            pub fn margin(
+                mut self,
+                margin: $crate::taffy::Rect<$crate::taffy::LengthPercentageAuto>,
+            ) -> Self {
+                self.node.layout.margin = margin;
+                self
+            }
+            pub fn padding(
+                mut self,
+                padding: $crate::taffy::Rect<$crate::taffy::LengthPercentage>,
+            ) -> Self {
+                self.node.layout.padding = padding;
+                self
+            }
+            pub fn align_items(mut self, align_items: $crate::taffy::AlignItems) -> Self {
+                self.node.layout.align_items = Some(align_items);
+                self
+            }
+            pub fn justify_content(
+                mut self,
+                justify_content: $crate::taffy::JustifyContent,
+            ) -> Self {
+                self.node.layout.justify_content = Some(justify_content);
+                self
+            }
+            pub fn gap(
+                mut self,
+                gap: $crate::taffy::Size<$crate::taffy::LengthPercentage>,
+            ) -> Self {
+                self.node.layout.gap = gap;
+                self
+            }
+            pub fn grow(mut self, flex_grow: f32) -> Self {
+                self.node.layout.flex_grow = flex_grow;
+                self
+            }
+            pub fn direction(mut self, flex_direction: $crate::taffy::FlexDirection) -> Self {
+                self.node.layout.flex_direction = flex_direction;
+                self
+            }
+            pub fn parent(mut self, parent: impl Into<NodeId>) -> Self {
+                self.node.parent = Some(parent.into());
+                self
+            }
+            pub fn child(mut self, child: impl Into<NodeId>) -> Self {
+                self.node.children.push(child.into());
+                self
+            }
+            pub fn children(mut self, children: impl IntoIterator<Item = NodeId>) -> Self {
+                self.node.children.extend(children);
+                self
+            }
+        }
+    };
+}
+
+#[must_use]
+pub struct NodeBuilder {
+    node: NodeBuilderBase,
+}
+
+impl_node_builder!(NodeBuilder);
+impl NodeBuilder {
+    pub fn build(self, gui: &mut Gui) -> NodeId {
+        self.node.build(gui)
+    }
+}
+
+pub struct Node;
+
+impl Node {
+    pub fn builder() -> NodeBuilder {
+        NodeBuilder {
+            node: NodeBuilderBase::default(),
+        }
+    }
+}
+
+#[must_use]
+pub struct VisibleBuilder {
+    node: NodeBuilderBase,
+    visible: bool,
+    separate_layer: bool,
+    background: Option<ThemeColor>,
+}
+
+impl_node_builder!(VisibleBuilder);
+impl VisibleBuilder {
+    pub fn border(mut self, border: taffy::Rect<taffy::LengthPercentage>) -> Self {
+        self.node.layout.border = border;
+        self
+    }
+    pub fn visible(mut self, visible: bool) -> Self {
+        self.visible = visible;
+        self
+    }
+    pub fn separate_layer(mut self) -> Self {
+        self.separate_layer = true;
+        self
+    }
+    pub fn background(mut self, background: ThemeColor) -> Self {
+        self.background = Some(background);
+        self
+    }
+    pub fn build(self, gui: &mut Gui) -> WidgetId<Visible> {
+        self.node.build_widget(
+            gui,
+            Visible {
+                visible: self.visible,
+                separate_layer: self.separate_layer,
+                background: self.background,
+            },
+        )
+    }
+}
+
+pub struct Visible {
+    visible: bool,
+    separate_layer: bool,
+    background: Option<ThemeColor>,
+}
+
+impl Visible {
+    pub fn new() -> Self {
+        Visible {
             visible: true,
             separate_layer: false,
             background: None,
         }
     }
-}
-
-pub struct Visible {
-    pub visible: bool,
-    pub separate_layer: bool,
-    pub background: Option<ThemeColor>,
-}
-
-impl Visible {
-    pub fn create(gui: &mut Gui, properties: VisibleProperties) -> WidgetId<Self> {
-        gui.create_widget(
-            properties.layout,
-            Visible {
-                visible: properties.visible,
-                separate_layer: properties.separate_layer,
-                background: properties.background,
-            },
-        )
+    pub fn create(gui: &mut Gui) -> WidgetId<Self> {
+        gui.create_widget(Style::DEFAULT, Self::new())
+    }
+    pub fn builder() -> VisibleBuilder {
+        VisibleBuilder {
+            node: NodeBuilderBase::default(),
+            visible: true,
+            separate_layer: false,
+            background: None,
+        }
     }
 }
 impl Widget for Visible {
@@ -75,9 +231,6 @@ impl Widget for Visible {
     }
     fn draw<'a>(&'a self, _batcher: &mut GuiBatcher<'a>, _theme: &dyn Theme, _content_rect: Rect) {}
 }
-impl WidgetBuilder for Visible {
-    type Properties<'a> = VisibleProperties;
-}
 impl WidgetId<Visible> {
     pub fn visible(&self, gui: &Gui) -> bool {
         gui.get_widget(*self)
@@ -100,54 +253,73 @@ impl WidgetId<Visible> {
     }
 }
 
-pub struct LabelProperties<'a> {
-    pub layout: Style,
-    pub font_size: f32,
-    pub line_height: f32,
-    pub color: Option<glyphon::Color>,
-    pub alignment: Option<Align>,
-    pub family: glyphon::Family<'static>,
-    pub stretch: glyphon::Stretch,
-    pub style: glyphon::Style,
-    pub weight: glyphon::Weight,
-    pub text: &'a str,
+#[must_use]
+pub struct LabelBuilder<'a> {
+    node: NodeBuilderBase,
+    font_size: f32,
+    line_height: f32,
+    attrs: Attrs<'static>,
+    align: Option<Align>,
+    text: &'a str,
 }
 
-impl LabelProperties<'_> {
+impl_node_builder!(LabelBuilder<'_>);
+impl LabelBuilder<'_> {
     fn metrics(&self) -> Metrics {
         Metrics::relative(self.font_size, self.line_height)
     }
-    fn attrs(&self) -> Attrs<'static> {
-        Attrs {
-            color_opt: self.color,
-            family: self.family,
-            stretch: self.stretch,
-            style: self.style,
-            weight: self.weight,
-            ..Attrs::new()
-        }
+    pub fn font_size(mut self, font_size: f32) -> Self {
+        self.font_size = font_size;
+        self
     }
-}
-impl Default for LabelProperties<'_> {
-    fn default() -> Self {
-        LabelProperties {
-            layout: Style::default(),
-            font_size: 18.0,
-            line_height: 1.0,
-            color: None,
-            alignment: None,
-            family: glyphon::Family::SansSerif,
-            stretch: glyphon::Stretch::Normal,
-            style: glyphon::Style::Normal,
-            weight: glyphon::Weight::NORMAL,
-            text: "",
-        }
+    pub fn line_height(mut self, line_height: f32) -> Self {
+        self.line_height = line_height;
+        self
+    }
+    pub fn color(mut self, color: Rgba) -> Self {
+        self.attrs.color_opt = Some(glyphon::Color(color.to_u32()));
+        self
+    }
+    pub fn align(mut self, align: Align) -> Self {
+        self.align = Some(align);
+        self
+    }
+    pub fn family(mut self, family: glyphon::Family<'static>) -> Self {
+        self.attrs.family = family;
+        self
+    }
+    pub fn stretch(mut self, stretch: glyphon::Stretch) -> Self {
+        self.attrs.stretch = stretch;
+        self
+    }
+    pub fn style(mut self, style: glyphon::Style) -> Self {
+        self.attrs.style = style;
+        self
+    }
+    pub fn weight(mut self, weight: glyphon::Weight) -> Self {
+        self.attrs.weight = weight;
+        self
+    }
+    pub fn build(self, gui: &mut Gui) -> WidgetId<Label> {
+        let widget = Label::new(
+            gui.font_system(),
+            self.metrics(),
+            self.attrs,
+            self.align,
+            self.text,
+        );
+        self.node.build_widget(gui, widget)
     }
 }
 
-pub struct Label(Buffer, Attrs<'static>, Option<Align>);
+pub struct Label {
+    buffer: Buffer,
+    attrs: Attrs<'static>,
+    align: Option<Align>,
+}
 
 impl Label {
+    const DEFAULT_FONT_SIZE: f32 = 18.0;
     pub fn buffer_size(buffer: &Buffer) -> Size<f32> {
         let (width, total_lines) = buffer
             .layout_runs()
@@ -164,7 +336,7 @@ impl Label {
         font_system: &mut FontSystem,
         metrics: Metrics,
         attrs: Attrs<'static>,
-        alignment: Option<Align>,
+        align: Option<Align>,
         text: &str,
     ) -> Self {
         let mut buffer = Buffer::new(font_system, metrics);
@@ -174,32 +346,45 @@ impl Label {
                 [(text, attrs.clone())],
                 &attrs,
                 Shaping::Advanced,
-                alignment,
+                align,
             );
         }
-        Label(buffer, attrs, alignment)
+        Label {
+            buffer,
+            attrs,
+            align,
+        }
     }
-    #[must_use]
-    pub fn create(gui: &mut Gui, properties: LabelProperties) -> WidgetId<Self> {
-        let widget = Label::new(
+    pub fn create(gui: &mut Gui, text: &str) -> WidgetId<Self> {
+        let label = Self::new(
             gui.font_system(),
-            properties.metrics(),
-            properties.attrs(),
-            properties.alignment,
-            properties.text,
+            Metrics::relative(Self::DEFAULT_FONT_SIZE, 1.0),
+            Attrs::new(),
+            None,
+            text,
         );
-        gui.create_widget(properties.layout, widget)
+        gui.create_widget(Style::DEFAULT, label)
+    }
+    pub fn builder(text: &str) -> LabelBuilder {
+        LabelBuilder {
+            node: NodeBuilderBase::default(),
+            font_size: Self::DEFAULT_FONT_SIZE,
+            line_height: 1.0,
+            attrs: Attrs::new(),
+            align: None,
+            text,
+        }
     }
     pub fn buffer(&self) -> &Buffer {
-        &self.0
+        &self.buffer
     }
     pub fn set_text(&mut self, font_system: &mut FontSystem, text: &str) {
-        self.0.set_rich_text(
+        self.buffer.set_rich_text(
             font_system,
-            [(text, self.1.clone())],
-            &self.1,
+            [(text, self.attrs.clone())],
+            &self.attrs,
             Shaping::Advanced,
-            self.2,
+            self.align,
         );
     }
     pub fn set_text_and_color(
@@ -208,13 +393,13 @@ impl Label {
         text: &str,
         color: Option<Rgba>,
     ) {
-        self.1.color_opt = color.map(|color| glyphon::Color(color.to_u32()));
-        self.0.set_rich_text(
+        self.attrs.color_opt = color.map(|color| glyphon::Color(color.to_u32()));
+        self.buffer.set_rich_text(
             font_system,
-            [(text, self.1.clone())],
-            &self.1,
+            [(text, self.attrs.clone())],
+            &self.attrs,
             Shaping::Advanced,
-            self.2,
+            self.align,
         );
     }
 }
@@ -230,16 +415,16 @@ impl Widget for Label {
             AvailableSpace::MaxContent => None,
             AvailableSpace::Definite(width) => Some(width),
         });
-        self.0.set_size(font_system, width_constraint, None);
-        Self::buffer_size(&self.0)
+        self.buffer.set_size(font_system, width_constraint, None);
+        Self::buffer_size(&self.buffer)
     }
     fn layout(&mut self, font_system: &mut FontSystem, content_rect: Rect) {
-        self.0
+        self.buffer
             .set_size(font_system, Some(content_rect.width()), None);
     }
     fn draw<'a>(&'a self, batcher: &mut GuiBatcher<'a>, theme: &dyn Theme, content_rect: Rect) {
         batcher.queue_text(TextArea {
-            buffer: &self.0,
+            buffer: &self.buffer,
             left: content_rect.min.x,
             top: content_rect.min.y,
             scale: 1.0,
@@ -248,9 +433,6 @@ impl Widget for Label {
             custom_glyphs: &[],
         });
     }
-}
-impl WidgetBuilder for Label {
-    type Properties<'a> = LabelProperties<'a>;
 }
 impl WidgetId<Label> {
     pub fn set_text(&self, gui: &mut Gui, text: &str) {
@@ -289,8 +471,8 @@ pub enum ButtonState {
     Disable,
 }
 
-pub struct ButtonStateAction {
-    pub input_action: InputAction,
+pub struct ButtonStateInput {
+    pub action: InputAction,
     pub changed: bool,
     pub clicked: bool,
 }
@@ -299,31 +481,31 @@ impl ButtonState {
     pub fn handle_input(
         &mut self,
         input: &GuiInput,
-        hotkey: Option<&Hotkey>,
+        hotkey: Option<Hotkey>,
         rect: Rect,
-    ) -> ButtonStateAction {
+    ) -> ButtonStateInput {
         let pointer_over = !input.blocked && rect.contains(input.pointer);
-        let input_action = if pointer_over {
+        let action = if pointer_over {
             InputAction::Block
         } else {
             InputAction::Pass
         };
         if *self == ButtonState::Disable {
-            return ButtonStateAction {
-                input_action,
+            return ButtonStateInput {
+                action,
                 changed: false,
                 clicked: false,
             };
         }
         let mut changed = false;
-        let hotkey_pressed = input.hotkey.is_some() && input.hotkey.as_ref() == hotkey;
+        let hotkey_pressed = input.hotkey.is_some() && input.hotkey == hotkey;
         if !hotkey_pressed && !input.grabbed && !pointer_over {
             if *self != ButtonState::Normal {
                 *self = ButtonState::Normal;
                 changed = true;
             }
-            return ButtonStateAction {
-                input_action: InputAction::Pass,
+            return ButtonStateInput {
+                action: InputAction::Pass,
                 changed,
                 clicked: false,
             };
@@ -340,30 +522,10 @@ impl ButtonState {
             changed = true;
         }
         let clicked = *self == ButtonState::Press && (hotkey_pressed || input.clicked);
-        ButtonStateAction {
-            input_action,
+        ButtonStateInput {
+            action,
             changed,
             clicked,
-        }
-    }
-}
-
-pub struct ButtonProperties<'a> {
-    pub layout: Style,
-    pub theme: ButtonTheme,
-    pub enabled: bool,
-    pub hotkey: Option<Hotkey>,
-    pub label: Option<&'a str>,
-}
-
-impl Default for ButtonProperties<'_> {
-    fn default() -> Self {
-        Self {
-            layout: Default::default(),
-            theme: ButtonTheme::Normal,
-            enabled: true,
-            hotkey: None,
-            label: None,
         }
     }
 }
@@ -381,6 +543,72 @@ impl ButtonEvent {
     }
 }
 
+#[must_use]
+pub struct ButtonBuilder<'a> {
+    node: NodeBuilderBase,
+    on_clicked: ButtonEvent,
+    theme: ButtonTheme,
+    enabled: bool,
+    toggled: bool,
+    hotkey: Option<Hotkey>,
+    label: Option<&'a str>,
+}
+
+impl_node_builder!(ButtonBuilder<'_>);
+impl ButtonBuilder<'_> {
+    pub fn theme(mut self, theme: ButtonTheme) -> Self {
+        self.theme = theme;
+        self
+    }
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+    pub fn toggled(mut self, toggled: bool) -> Self {
+        self.toggled = toggled;
+        self
+    }
+    pub fn hotkey(mut self, hotkey: Hotkey) -> Self {
+        self.hotkey = Some(hotkey);
+        self
+    }
+    pub fn label<'a>(self, label: &'a str) -> ButtonBuilder<'a> {
+        ButtonBuilder {
+            label: Some(label),
+            ..self
+        }
+    }
+    pub fn build(mut self, gui: &mut Gui) -> WidgetId<Button> {
+        let exclusive_group = if let ButtonEvent::Exclusive(group, index) = &mut self.on_clicked {
+            *index = group.buttons.borrow().len();
+            Some(group.clone())
+        } else {
+            None
+        };
+        let widget = Button {
+            theme: self.theme,
+            state: if self.enabled {
+                ButtonState::Normal
+            } else {
+                ButtonState::Disable
+            },
+            hotkey: self.hotkey,
+            toggled: self.toggled && self.on_clicked.is_toggle(),
+            on_clicked: self.on_clicked,
+        };
+        let button = self
+            .node
+            .build_widget_with_layout(gui, widget, Button::style);
+        if let Some(text) = self.label {
+            Button::add_label(gui, button, text);
+        }
+        if let Some(group) = exclusive_group {
+            group.buttons.borrow_mut().push(button);
+        }
+        button
+    }
+}
+
 pub struct Button {
     theme: ButtonTheme,
     state: ButtonState,
@@ -392,6 +620,26 @@ pub struct Button {
 impl Button {
     const LABEL_FONT_SIZE: f32 = 20.0;
     const MIN_SIZE: Size<Dimension> = Size::from_lengths(128.0, 32.0);
+    fn style(base: Style) -> Style {
+        Style {
+            min_size: Self::MIN_SIZE,
+            align_items: Some(AlignItems::Center),
+            ..base
+        }
+    }
+    fn add_label(gui: &mut Gui, button: WidgetId<Button>, text: &str) {
+        use taffy::prelude::*;
+        Label::builder(text)
+            .layout(Style {
+                flex_grow: 1.0,
+                margin: Rect::new(4.0, 4.0, 0.0, 0.0).map(length),
+                ..Default::default()
+            })
+            .font_size(Self::LABEL_FONT_SIZE)
+            .align(Align::Center)
+            .parent(button)
+            .build(gui);
+    }
 
     pub fn new<C, F>(theme: ButtonTheme, on_clicked: F) -> Self
     where
@@ -419,69 +667,70 @@ impl Button {
             on_clicked: ButtonEvent::Toggle(EventFn::new_param(on_clicked)),
         }
     }
-    fn new_exclusive(theme: ButtonTheme, state: bool, group: &Rc<ExclusiveGroup>) -> Self {
-        Button {
-            theme,
-            state: ButtonState::Normal,
-            hotkey: None,
-            toggled: state,
-            on_clicked: ButtonEvent::Exclusive(group.clone(), group.next_index()),
-        }
-    }
-    fn create_label(gui: &mut Gui, button: WidgetId<Button>, text: &str) {
-        let margin = taffy::Rect::new(4.0, 4.0, 0.0, 0.0).map(taffy::LengthPercentageAuto::length);
-        let label = gui! { Label(text, font_size: Self::LABEL_FONT_SIZE, alignment: Some(Align::Center), layout: layout!(flex_grow: 1.0, margin)) };
-        gui.add_child(button, label);
-    }
-    #[must_use]
-    pub fn create<C, F>(
-        gui: &mut Gui,
-        properties: ButtonProperties,
-        on_clicked: F,
-    ) -> WidgetId<Self>
+    pub fn create<C, F>(gui: &mut Gui, label: &str, on_clicked: F) -> WidgetId<Button>
     where
         C: 'static,
         F: Fn(&mut C) + 'static,
     {
-        let mut button = Self::new(properties.theme, on_clicked);
-        button.hotkey = properties.hotkey;
-        button.set_enabled(properties.enabled);
         let button = gui.create_widget(
-            Style {
-                min_size: Self::MIN_SIZE,
-                align_items: Some(AlignItems::Center),
-                ..properties.layout
-            },
-            button,
+            Self::style(Style::DEFAULT),
+            Button::new(ButtonTheme::Normal, on_clicked),
         );
-        if let Some(label) = properties.label {
-            Self::create_label(gui, button, label);
-        }
+        Self::add_label(gui, button, label);
         button
     }
-    pub fn create_exclusive(
-        gui: &mut Gui,
-        properties: ToggleButtonProperties,
-        group: &Rc<ExclusiveGroup>,
-    ) -> WidgetId<Self> {
-        let mut button = Self::new_exclusive(properties.theme, properties.toggled, group);
-        button.hotkey = properties.hotkey;
+    pub fn create_toggle<C, F>(gui: &mut Gui, label: &str, on_clicked: F) -> WidgetId<Button>
+    where
+        C: 'static,
+        F: Fn(&mut C, bool) + 'static,
+    {
         let button = gui.create_widget(
-            Style {
-                min_size: Size {
-                    width: Dimension::auto(),
-                    height: Self::MIN_SIZE.height,
-                },
-                align_items: Some(AlignItems::Center),
-                ..properties.layout
-            },
-            button,
+            Self::style(Style::DEFAULT),
+            Button::new_toggle(ButtonTheme::Normal, false, on_clicked),
         );
-        if let Some(label) = properties.label {
-            Self::create_label(gui, button, label);
-        }
-        group.buttons.borrow_mut().push(button);
+        Self::add_label(gui, button, label);
         button
+    }
+    pub fn builder<C, F>(on_clicked: F) -> ButtonBuilder<'static>
+    where
+        C: 'static,
+        F: Fn(&mut C) + 'static,
+    {
+        ButtonBuilder {
+            node: NodeBuilderBase::default(),
+            on_clicked: ButtonEvent::Normal(EventFn::new(on_clicked)),
+            theme: ButtonTheme::Normal,
+            enabled: true,
+            toggled: false,
+            hotkey: None,
+            label: None,
+        }
+    }
+    pub fn toggle_builder<C, F>(on_clicked: F) -> ButtonBuilder<'static>
+    where
+        C: 'static,
+        F: Fn(&mut C, bool) + 'static,
+    {
+        ButtonBuilder {
+            node: NodeBuilderBase::default(),
+            on_clicked: ButtonEvent::Toggle(EventFn::new_param(on_clicked)),
+            theme: ButtonTheme::Normal,
+            enabled: true,
+            toggled: false,
+            hotkey: None,
+            label: None,
+        }
+    }
+    pub fn exclusive_builder(group: Rc<ExclusiveGroup>) -> ButtonBuilder<'static> {
+        ButtonBuilder {
+            node: NodeBuilderBase::default(),
+            on_clicked: ButtonEvent::Exclusive(group, 0),
+            theme: ButtonTheme::Normal,
+            enabled: true,
+            toggled: false,
+            hotkey: None,
+            label: None,
+        }
     }
 
     pub fn enabled(&self) -> bool {
@@ -505,11 +754,11 @@ impl Button {
 }
 impl Widget for Button {
     fn input(&mut self, input: &GuiInput, executor: &mut EventExecutor, rect: Rect) -> InputAction {
-        let action = self.state.handle_input(input, self.hotkey.as_ref(), rect);
-        if action.changed {
+        let state_input = self.state.handle_input(input, self.hotkey, rect);
+        if state_input.changed {
             executor.mark_draw_dirty();
         }
-        if action.clicked {
+        if state_input.clicked {
             match &self.on_clicked {
                 ButtonEvent::Normal(event) => executor.queue(event.clone(), None),
                 ButtonEvent::Toggle(event) => {
@@ -533,7 +782,7 @@ impl Widget for Button {
                 }
             }
         }
-        action.input_action
+        state_input.action
     }
     fn draw<'a>(&'a self, batcher: &mut GuiBatcher<'a>, theme: &dyn Theme, content_rect: Rect) {
         let button_theme = if self.on_clicked.is_toggle() {
@@ -553,9 +802,6 @@ impl Widget for Button {
         };
         theme.draw_button(batcher, content_rect, button_theme, self.state);
     }
-}
-impl WidgetBuilder for Button {
-    type Properties<'a> = ButtonProperties<'a>;
 }
 impl WidgetId<Button> {
     pub fn enabled(&self, gui: &Gui) -> bool {
@@ -584,46 +830,6 @@ impl WidgetId<Button> {
     }
 }
 
-#[derive(Default)]
-pub struct ToggleButtonProperties<'a> {
-    pub layout: Style,
-    pub theme: ButtonTheme,
-    pub toggled: bool,
-    pub hotkey: Option<Hotkey>,
-    pub label: Option<&'a str>,
-}
-
-pub struct ToggleButton;
-
-impl ToggleButton {
-    #[must_use]
-    pub fn create<C, F>(
-        gui: &mut Gui,
-        properties: ToggleButtonProperties,
-        on_clicked: F,
-    ) -> WidgetId<Button>
-    where
-        C: 'static,
-        F: Fn(&mut C, bool) + 'static,
-    {
-        let button = gui.create_widget(
-            Style {
-                min_size: Button::MIN_SIZE,
-                align_items: Some(AlignItems::Center),
-                ..properties.layout
-            },
-            Button::new_toggle(properties.theme, properties.toggled, on_clicked),
-        );
-        if let Some(label) = properties.label {
-            Button::create_label(gui, button, label);
-        }
-        button
-    }
-}
-impl WidgetBuilder for ToggleButton {
-    type Properties<'a> = ToggleButtonProperties<'a>;
-}
-
 pub struct ExclusiveGroup {
     allow_deselect: bool,
     deselect_others: EventFn,
@@ -632,9 +838,6 @@ pub struct ExclusiveGroup {
 }
 
 impl ExclusiveGroup {
-    fn next_index(&self) -> usize {
-        self.buttons.borrow().len()
-    }
     pub fn new<C, F>(allow_deselect: bool, on_selected: F) -> Rc<Self>
     where
         C: 'static,
@@ -655,44 +858,61 @@ impl ExclusiveGroup {
             buttons: RefCell::new(Vec::new()),
         })
     }
-    #[must_use]
-    pub fn create_container<I>(
-        self: &Rc<Self>,
+}
+
+#[must_use]
+pub struct ExclusiveButtons {
+    group: Rc<ExclusiveGroup>,
+    selected: Option<usize>,
+    node: NodeId,
+    button_layout: Style,
+    button_theme: ButtonTheme,
+}
+
+impl ExclusiveButtons {
+    pub fn new(
         gui: &mut Gui,
-        container_layout: Style,
-        button_layout: Style,
-        tabs: bool,
+        group: Rc<ExclusiveGroup>,
         selected: Option<usize>,
-        labels: I,
-        hotkeys: Option<Vec<Hotkey>>,
-    ) -> NodeId
-    where
-        I: IntoIterator<Item: AsRef<str>>,
-    {
-        let theme = if tabs {
-            ButtonTheme::Tab
-        } else {
-            ButtonTheme::Normal
-        };
-        let container = gui.create_node(container_layout);
-        for (index, label) in labels.into_iter().enumerate() {
-            let hotkey = hotkeys
-                .as_ref()
-                .and_then(|hotkeys| hotkeys.get(index))
-                .cloned();
-            let button = Button::create_exclusive(
-                gui,
-                ToggleButtonProperties {
-                    layout: button_layout.clone(),
-                    theme,
-                    toggled: selected == Some(index),
-                    hotkey,
-                    label: Some(label.as_ref()),
-                },
-                self,
-            );
-            gui.add_child(container, button);
+        layout: Style,
+    ) -> Self {
+        ExclusiveButtons {
+            group,
+            selected,
+            node: gui.create_node(layout),
+            button_layout: Style::DEFAULT,
+            button_theme: ButtonTheme::Normal,
         }
-        container
+    }
+    pub fn new_tabs(
+        gui: &mut Gui,
+        group: Rc<ExclusiveGroup>,
+        selected: Option<usize>,
+        layout: Style,
+    ) -> Self {
+        ExclusiveButtons {
+            group,
+            selected,
+            node: gui.create_node(layout),
+            button_layout: Style::DEFAULT,
+            button_theme: ButtonTheme::Tab,
+        }
+    }
+    pub fn button_layout(mut self, button_layout: Style) -> Self {
+        self.button_layout = button_layout;
+        self
+    }
+    pub fn add_button(&self) -> ButtonBuilder {
+        let index = self.group.buttons.borrow().len();
+        Button::exclusive_builder(self.group.clone())
+            .layout(self.button_layout.clone())
+            .theme(self.button_theme)
+            .toggled(self.selected == Some(index))
+            .parent(self.node)
+    }
+}
+impl From<ExclusiveButtons> for NodeId {
+    fn from(value: ExclusiveButtons) -> Self {
+        value.node
     }
 }

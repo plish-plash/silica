@@ -20,10 +20,9 @@ impl silica_gui::KeyboardEvent for KeyboardEvent {
     fn to_hotkey(&self) -> Option<Hotkey> {
         if self.0 == ElementState::Pressed {
             Some(Hotkey {
-                key: self.1.to_string(),
-                mod_ctrl: self.2.control_key(),
-                mod_alt: self.2.alt_key(),
-                mod_super: self.2.super_key(),
+                key: self.1.chars().next().unwrap(),
+                mod1: self.2.control_key(),
+                mod2: self.2.alt_key(),
             })
         } else {
             None
