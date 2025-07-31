@@ -8,22 +8,36 @@ use winit::{
     application::ApplicationHandler,
     error::EventLoopError,
     event::{ElementState, MouseButton, WindowEvent},
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::{ModifiersState, SmolStr},
-    window::{Window, WindowId},
+    event_loop::{ControlFlow, EventLoop},
+    keyboard::{KeyCode, ModifiersState, PhysicalKey, SmolStr},
+    window::WindowId,
 };
+pub use winit::{event_loop::ActiveEventLoop, keyboard, window::Window};
 
 pub use crate::gui::*;
 
-pub struct KeyboardEvent(ElementState, SmolStr, ModifiersState);
+pub struct KeyboardEvent {
+    state: ElementState,
+    physical_key: KeyCode,
+    text: Option<SmolStr>,
+    modifiers: ModifiersState,
+}
 
+impl KeyboardEvent {
+    pub fn is_pressed(&self) -> bool {
+        self.state == ElementState::Pressed
+    }
+    pub fn physical_key(&self) -> KeyCode {
+        self.physical_key
+    }
+}
 impl silica_gui::KeyboardEvent for KeyboardEvent {
     fn to_hotkey(&self) -> Option<Hotkey> {
-        if self.0 == ElementState::Pressed {
-            Some(Hotkey {
-                key: self.1.chars().next().unwrap(),
-                mod1: self.2.control_key(),
-                mod2: self.2.alt_key(),
+        if self.is_pressed() {
+            self.text.as_ref().map(|text| Hotkey {
+                key: text.chars().next().unwrap(),
+                mod1: self.modifiers.control_key(),
+                mod2: self.modifiers.alt_key(),
             })
         } else {
             None
@@ -42,13 +56,18 @@ impl silica_gui::MouseButtonEvent for MouseButtonEvent {
     }
 }
 
-type InputEvent = silica_gui::InputEvent<KeyboardEvent, MouseButtonEvent>;
+pub type InputEvent = silica_gui::InputEvent<KeyboardEvent, MouseButtonEvent>;
 
 pub trait App {
-    fn input_event(&mut self, window: &Window, event: InputEvent);
-    fn resize(&mut self, context: &Context, size: SurfaceSize);
+    const RUN_CONTINUOUSLY: bool;
+    fn close_window(&mut self, event_loop: &ActiveEventLoop) {
+        event_loop.exit();
+    }
+    fn resize_window(&mut self, context: &Context, size: SurfaceSize);
+    fn input(&mut self, event_loop: &ActiveEventLoop, window: &Window, event: InputEvent);
     fn render(
         &mut self,
+        event_loop: &ActiveEventLoop,
         context: &Context,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
@@ -64,7 +83,7 @@ struct WindowApp<T> {
 }
 
 impl<T: App> WindowApp<T> {
-    fn render(&mut self) {
+    fn render(&mut self, event_loop: &ActiveEventLoop) {
         let frame = self.surface.acquire(&self.context);
         let view: wgpu::TextureView = frame
             .texture
@@ -73,7 +92,8 @@ impl<T: App> WindowApp<T> {
             .context
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        self.app.render(&self.context, &view, &mut encoder);
+        self.app
+            .render(event_loop, &self.context, &view, &mut encoder);
         self.context.queue.submit([encoder.finish()]);
         self.window.as_ref().unwrap().pre_present_notify();
         frame.present();
@@ -104,25 +124,30 @@ impl<T: App> ApplicationHandler for WindowApp<T> {
         let window = self.window.as_ref().unwrap();
         match event {
             WindowEvent::CloseRequested => {
-                event_loop.exit();
+                self.app.close_window(event_loop);
             }
             WindowEvent::Resized(size) => {
                 let size = SurfaceSize::new(size.width, size.height);
                 self.surface.resize(&self.context, size);
-                self.app.resize(&self.context, size);
+                self.app.resize_window(&self.context, size);
                 window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                self.render();
+                self.render(event_loop);
+                if T::RUN_CONTINUOUSLY && !event_loop.exiting() {
+                    self.window.as_ref().unwrap().request_redraw();
+                }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.app.input_event(
+                self.app.input(
+                    event_loop,
                     window,
                     InputEvent::MouseMotion(Point::new(position.x as i32, position.y as i32)),
                 );
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                self.app.input_event(
+                self.app.input(
+                    event_loop,
                     window,
                     InputEvent::MouseButton(MouseButtonEvent(button, state)),
                 );
@@ -133,10 +158,16 @@ impl<T: App> ApplicationHandler for WindowApp<T> {
                 ..
             } => {
                 if !event.repeat {
-                    if let Some(text) = event.text {
-                        self.app.input_event(
+                    if let PhysicalKey::Code(key_code) = event.physical_key {
+                        self.app.input(
+                            event_loop,
                             window,
-                            InputEvent::Keyboard(KeyboardEvent(event.state, text, self.modifiers)),
+                            InputEvent::Keyboard(KeyboardEvent {
+                                state: event.state,
+                                physical_key: key_code,
+                                text: event.text,
+                                modifiers: self.modifiers,
+                            }),
                         );
                     }
                 }
@@ -151,7 +182,11 @@ impl<T: App> ApplicationHandler for WindowApp<T> {
 
 pub fn run_app<T: App>(context: Context, app: T) -> Result<(), EventLoopError> {
     let event_loop = EventLoop::new()?;
-    event_loop.set_control_flow(ControlFlow::Wait);
+    event_loop.set_control_flow(if T::RUN_CONTINUOUSLY {
+        ControlFlow::Poll
+    } else {
+        ControlFlow::Wait
+    });
     let mut window_app = WindowApp {
         window: None,
         context,

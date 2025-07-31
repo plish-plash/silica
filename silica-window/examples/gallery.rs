@@ -1,11 +1,9 @@
 use silica_gui::*;
+use silica_wgpu::{AdapterFeatures, Context};
 
 fn build_gui(gui: &mut Gui) -> NodeId {
     let label = gui.create_widget(
-        Style {
-            background_color: Some(Color::Custom(Rgba::CYAN)),
-            ..Default::default()
-        },
+        Style::default(),
         LabelBuilder::new("Hello, World!")
             .font_size(24.0)
             .build(gui),
@@ -88,5 +86,6 @@ fn main() {
     let mut gui = Gui::new(FontSystem::with_system_fonts());
     let root = build_gui(&mut gui);
     gui.set_root(root);
-    silica_window::run_gui_app(gui, include_bytes!("theme.data")).unwrap();
+    let context = Context::init(AdapterFeatures::default());
+    silica_window::run_gui_app(context, gui, include_bytes!("theme.data")).unwrap();
 }

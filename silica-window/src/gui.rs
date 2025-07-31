@@ -5,28 +5,21 @@ use silica_gui::{
     render::GuiResources,
     theme::{StandardTheme, Theme},
 };
-use silica_wgpu::{AdapterFeatures, Context, SurfaceSize, TextureConfig, wgpu};
-use winit::{error::EventLoopError, window::Window};
+use silica_wgpu::{Context, SurfaceSize, TextureConfig, wgpu};
+use winit::{error::EventLoopError, event_loop::ActiveEventLoop, window::Window};
 
 use crate::{App, InputEvent, run_app};
 
-struct GuiApplication {
+struct GuiApp {
     gui: Gui,
     texture_config: TextureConfig,
     theme: Rc<dyn Theme>,
     resources: Option<GuiResources>,
 }
 
-impl App for GuiApplication {
-    fn input_event(&mut self, window: &Window, event: InputEvent) {
-        let (executor, _) = self.gui.input_event(event);
-        let redraw = executor.needs_redraw();
-        executor.execute(&mut self.gui);
-        if redraw || self.gui.needs_layout() {
-            window.request_redraw();
-        }
-    }
-    fn resize(&mut self, context: &Context, size: SurfaceSize) {
+impl App for GuiApp {
+    const RUN_CONTINUOUSLY: bool = false;
+    fn resize_window(&mut self, context: &Context, size: SurfaceSize) {
         self.gui
             .set_area(Rect::new(Point::origin(), size.to_i32().cast_unit()));
         let resources = self.resources.get_or_insert_with(|| {
@@ -34,8 +27,19 @@ impl App for GuiApplication {
         });
         resources.surface_resize(context, size);
     }
+    fn input(&mut self, event_loop: &ActiveEventLoop, window: &Window, event: InputEvent) {
+        let (executor, _) = self.gui.handle_input(event);
+        let redraw = executor.needs_redraw();
+        executor.execute(&mut self.gui);
+        if self.gui.exit_requested() {
+            event_loop.exit();
+        } else if redraw || self.gui.needs_layout() {
+            window.request_redraw();
+        }
+    }
     fn render(
         &mut self,
+        _event_loop: &ActiveEventLoop,
         context: &Context,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
@@ -65,13 +69,12 @@ impl App for GuiApplication {
     }
 }
 
-pub fn run_gui_app(gui: Gui, theme_data: &[u8]) -> Result<(), EventLoopError> {
-    let context = Context::init(AdapterFeatures::default());
+pub fn run_gui_app(context: Context, gui: Gui, theme_data: &[u8]) -> Result<(), EventLoopError> {
     let texture_config = TextureConfig::new(&context, wgpu::FilterMode::Linear);
     let theme = Rc::new(StandardTheme::new(&context, &texture_config, theme_data));
     run_app(
         context,
-        GuiApplication {
+        GuiApp {
             gui,
             texture_config,
             theme,

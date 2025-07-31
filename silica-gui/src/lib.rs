@@ -246,6 +246,7 @@ pub struct Gui {
     layout_area: Rect,
     needs_layout: bool,
     batcher: Option<ImmediateBatcher<render::Quad>>,
+    exit_requested: bool,
 }
 
 impl Gui {
@@ -262,6 +263,7 @@ impl Gui {
             layout_area: Rect::zero(),
             needs_layout: false,
             batcher: None,
+            exit_requested: false,
         }
     }
     pub fn font_system(&self) -> &FontSystem {
@@ -357,6 +359,12 @@ impl Gui {
     }
     pub fn request_layout(&mut self) {
         self.needs_layout = true;
+    }
+    pub fn exit_requested(&self) -> bool {
+        self.exit_requested
+    }
+    pub fn request_exit(&mut self) {
+        self.exit_requested = true;
     }
 
     pub fn set_area(&mut self, area: Rect) {
@@ -457,7 +465,7 @@ impl Gui {
             }
         }
     }
-    pub fn input_event<K: KeyboardEvent, M: MouseButtonEvent>(
+    pub fn handle_input<K: KeyboardEvent, M: MouseButtonEvent>(
         &mut self,
         event: InputEvent<K, M>,
     ) -> (EventExecutor, Option<InputEvent<K, M>>) {

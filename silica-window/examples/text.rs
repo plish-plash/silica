@@ -1,4 +1,5 @@
 use silica_gui::*;
+use silica_wgpu::{AdapterFeatures, Context};
 
 fn main() {
     let mut gui = Gui::new(FontSystem::with_system_fonts());
@@ -11,5 +12,6 @@ fn main() {
             ..Default::default()
         },
     );
-    silica_window::run_gui_app(gui, include_bytes!("theme.data")).unwrap();
+    let context = Context::init(AdapterFeatures::default());
+    silica_window::run_gui_app(context, gui, include_bytes!("theme.data")).unwrap();
 }
