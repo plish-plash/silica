@@ -16,7 +16,7 @@ impl NodeBuilder {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn with_style(mut self, style: Style) -> Self {
+    pub fn style(mut self, style: Style) -> Self {
         self.style = style;
         self
     }
@@ -27,11 +27,11 @@ impl NodeBuilder {
         f(&mut self.style);
         self
     }
-    pub fn with_parent(mut self, parent: impl Into<NodeId>) -> Self {
+    pub fn parent(mut self, parent: impl Into<NodeId>) -> Self {
         self.parent = Some(parent.into());
         self
     }
-    pub fn with_child(mut self, child: impl Into<NodeId>) -> Self {
+    pub fn child(mut self, child: impl Into<NodeId>) -> Self {
         self.children.push(child.into());
         self
     }
@@ -360,15 +360,15 @@ impl ButtonBuilder {
         self.node = self.node.modify_style(f);
         self
     }
-    pub fn with_parent(mut self, parent: NodeId) -> Self {
-        self.node = self.node.with_parent(parent);
+    pub fn parent(mut self, parent: NodeId) -> Self {
+        self.node = self.node.parent(parent);
         self
     }
-    pub fn with_child(mut self, child: NodeId) -> Self {
-        self.node = self.node.with_child(child);
+    pub fn child(mut self, child: NodeId) -> Self {
+        self.node = self.node.child(child);
         self
     }
-    pub fn with_button_style(mut self, button_style: ButtonStyle) -> Self {
+    pub fn button_style(mut self, button_style: ButtonStyle) -> Self {
         self.button_style = button_style;
         self
     }
@@ -380,13 +380,13 @@ impl ButtonBuilder {
         self.toggled = toggled;
         self
     }
-    pub fn with_hotkey(mut self, hotkey: Hotkey) -> Self {
+    pub fn hotkey(mut self, hotkey: Hotkey) -> Self {
         self.hotkey = Some(hotkey);
         self
     }
-    pub fn with_label(mut self, gui: &mut Gui, label: &str) -> Self {
+    pub fn label(mut self, gui: &mut Gui, label: &str) -> Self {
         let label = Button::create_label(gui, label);
-        self.node = self.node.with_child(label);
+        self.node = self.node.child(label);
         self
     }
     pub fn build<C, F>(self, gui: &mut Gui, on_clicked: F) -> WidgetId<Button>
@@ -421,7 +421,7 @@ impl ButtonBuilder {
 impl Default for ButtonBuilder {
     fn default() -> Self {
         ButtonBuilder {
-            node: NodeBuilder::new().with_style(Button::default_style()),
+            node: NodeBuilder::new().style(Button::default_style()),
             button_style: ButtonStyle::default(),
             enabled: true,
             toggled: false,
@@ -505,7 +505,7 @@ impl Button {
         F: Fn(&mut C) + 'static,
     {
         ButtonBuilder::new()
-            .with_label(gui, label)
+            .label(gui, label)
             .build(gui, on_clicked)
     }
     pub fn create_toggle<C, F>(gui: &mut Gui, label: &str, on_clicked: F) -> WidgetId<Self>
@@ -514,7 +514,7 @@ impl Button {
         F: Fn(&mut C, bool) + 'static,
     {
         ButtonBuilder::new()
-            .with_label(gui, label)
+            .label(gui, label)
             .build_toggle(gui, on_clicked)
     }
 

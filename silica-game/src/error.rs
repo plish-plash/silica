@@ -85,7 +85,7 @@ pub(crate) fn error_gui(error: GameError) -> Gui {
     let mut gui = Gui::new(crate::load_fonts().unwrap_display());
     let root = NodeBuilder::new()
         .modify_style(|style| style.align = Align::Center)
-        .with_child(
+        .child(
             NodeBuilder::new()
                 .modify_style(|style| {
                     style.direction = Direction::Column;
@@ -94,7 +94,7 @@ pub(crate) fn error_gui(error: GameError) -> Gui {
                     style.padding = SideOffsets::new(16, 8, 16, 8);
                     style.gap = 16;
                 })
-                .with_child({
+                .child({
                     let label = LabelBuilder::new(&error)
                         .font_size(20.0)
                         .align(TextAlign::Center)
@@ -103,10 +103,10 @@ pub(crate) fn error_gui(error: GameError) -> Gui {
                         .modify_style(|style| style.max_size.width = 480)
                         .build_widget(&mut gui, label)
                 })
-                .with_child(
+                .child(
                     ButtonBuilder::new()
-                        .with_label(&mut gui, "Exit")
-                        .with_button_style(ButtonStyle::Delete)
+                        .label(&mut gui, "Exit")
+                        .button_style(ButtonStyle::Delete)
                         .build(&mut gui, |gui: &mut Gui| gui.request_exit()),
                 )
                 .build(&mut gui),

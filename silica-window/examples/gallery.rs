@@ -15,22 +15,22 @@ fn build_gui(gui: &mut Gui) -> NodeId {
             style.padding = SideOffsets::new_all_same(16);
             style.gap = 16;
         })
-        .with_child(label)
-        .with_child(
+        .child(label)
+        .child(
             NodeBuilder::new()
                 .modify_style(|style| style.gap = 16)
-                .with_child(
+                .child(
                     ButtonBuilder::new()
                         .modify_style(|style| style.grow = true)
-                        .with_label(gui, "Normal Button")
+                        .label(gui, "Normal Button")
                         .build(gui, move |gui| {
                             label.set_text(gui, "Pressed Normal Button");
                         }),
                 )
-                .with_child(
+                .child(
                     ButtonBuilder::new()
                         .modify_style(|style| style.grow = true)
-                        .with_label(gui, "Toggle Button")
+                        .label(gui, "Toggle Button")
                         .build_toggle(gui, move |gui, toggled| {
                             label.set_text(
                                 gui,
@@ -38,27 +38,27 @@ fn build_gui(gui: &mut Gui) -> NodeId {
                             );
                         }),
                 )
-                .with_child(
+                .child(
                     ButtonBuilder::new()
                         .modify_style(|style| style.grow = true)
-                        .with_button_style(ButtonStyle::Confirm)
-                        .with_label(gui, "Confirm Button")
+                        .button_style(ButtonStyle::Confirm)
+                        .label(gui, "Confirm Button")
                         .build(gui, move |gui| {
                             label.set_text(gui, "Pressed Confirm Button");
                         }),
                 )
-                .with_child(
+                .child(
                     ButtonBuilder::new()
                         .modify_style(|style| style.grow = true)
-                        .with_button_style(ButtonStyle::Delete)
-                        .with_label(gui, "Delete Button")
+                        .button_style(ButtonStyle::Delete)
+                        .label(gui, "Delete Button")
                         .build(gui, move |gui| {
                             label.set_text(gui, "Pressed Delete Button");
                         }),
                 )
                 .build(gui),
         )
-        .with_child({
+        .child({
             let group = ExclusiveGroup::new(false, move |gui, index| {
                 label.set_text(
                     gui,
@@ -71,9 +71,9 @@ fn build_gui(gui: &mut Gui) -> NodeId {
             });
             for (index, label) in ["One", "Two", "Three", "Four"].into_iter().enumerate() {
                 ButtonBuilder::new()
-                    .with_parent(buttons)
-                    .with_label(gui, label)
-                    .with_hotkey(Hotkey::new(char::from_digit(index as u32 + 1, 10).unwrap()))
+                    .parent(buttons)
+                    .label(gui, label)
+                    .hotkey(Hotkey::new(char::from_digit(index as u32 + 1, 10).unwrap()))
                     .toggled(index == 1)
                     .build_exclusive(gui, &group);
             }
