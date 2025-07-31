@@ -1,12 +1,12 @@
 [package]
 name = "silica-wgpu"
-version = "0.2.0"
-edition = "2021"
+version = "0.3.0"
+edition = "2024"
 
 [dependencies]
 silica-color = { path = "../silica-color" }
+log = "0.4"
 wgpu = "25.0"
 bytemuck = "1.23"
-pollster = "0.4"
 euclid = { version = "0.22", features = ["bytemuck"] }
-log = "0.4"
+pollster = "0.4"

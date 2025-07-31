@@ -1,6 +1,6 @@
 struct VertexInput {
     @builtin(vertex_index) vertex_idx: u32,
-    @location(0) rect: vec4f,
+    @location(0) rect: vec4i,
     @location(1) uv: vec4f,
     @location(2) color: vec4f,
 }
@@ -31,7 +31,7 @@ fn vs_main(in_vert: VertexInput) -> VertexOutput {
         in_vert.vertex_idx & 1u,
         (in_vert.vertex_idx >> 1u) & 1u,
     ));
-    let pos = mix(in_vert.rect.xy, in_vert.rect.zw, corner_position);
+    let pos = mix(vec2f(in_vert.rect.xy), vec2f(in_vert.rect.zw), corner_position);
     let uv = mix(in_vert.uv.xy, in_vert.uv.zw, corner_position);
 
     var out_vert: VertexOutput;

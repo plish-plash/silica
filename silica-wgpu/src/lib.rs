@@ -1,11 +1,14 @@
+mod batcher;
 pub mod draw;
 mod texture;
 
-use std::{marker::PhantomData, num::NonZero};
+use std::marker::PhantomData;
 
+use bytemuck::Pod;
 use euclid::point2;
-pub use texture::*;
 pub use wgpu;
+
+pub use crate::{batcher::*, texture::*};
 
 pub struct Uv;
 pub type UvRect = euclid::Box2D<f32, Uv>;
@@ -50,6 +53,7 @@ pub struct Context {
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+    pub surface_format: Option<wgpu::TextureFormat>,
 }
 
 impl Context {
@@ -148,6 +152,7 @@ impl Context {
             adapter,
             device,
             queue,
+            surface_format: None,
         }
     }
 
@@ -177,7 +182,7 @@ impl Surface {
     /// Additionally, we configure the surface based on the (now valid) window size.
     pub fn resume(
         &mut self,
-        context: &Context,
+        context: &mut Context,
         window: impl Into<wgpu::SurfaceTarget<'static>>,
         size: SurfaceSize,
     ) {
@@ -202,6 +207,7 @@ impl Surface {
         config.view_formats.push(format);
 
         surface.configure(&context.device, &config);
+        context.surface_format = Some(config.format);
         self.config = Some(config);
     }
 
@@ -234,7 +240,7 @@ impl Surface {
                 // If OutOfMemory happens, reconfiguring may not help, but we might as well try
                 | wgpu::SurfaceError::OutOfMemory,
             ) => {
-                surface.configure(&context.device, self.config());
+                surface.configure(&context.device, self.config.as_ref().unwrap());
                 surface
                     .get_current_texture()
                     .expect("Failed to acquire next surface texture!")
@@ -249,61 +255,100 @@ impl Surface {
         log::debug!("Surface suspend");
         self.surface = None;
     }
-
-    pub fn config(&self) -> &wgpu::SurfaceConfiguration {
-        self.config.as_ref().unwrap()
-    }
 }
 
-pub struct ResizableBuffer<T> {
-    buffer: wgpu::Buffer,
-    length: usize,
-    capacity: usize,
+pub struct BufferWriter<'a, T> {
+    view: wgpu::QueueWriteBufferView<'a>,
+    offset: usize,
     _type: PhantomData<T>,
 }
 
-impl<T: bytemuck::Pod> ResizableBuffer<T> {
-    const MINIMUM_SIZE: usize = 512;
-    fn create_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
-        device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("instances"),
-            size: capacity as u64,
+impl<T: Pod> BufferWriter<'_, T> {
+    pub fn is_full(&self) -> bool {
+        self.offset >= self.view.len()
+    }
+    pub fn push(&mut self, value: T) {
+        let bytes = bytemuck::bytes_of(&value);
+        let span = &mut self.view[self.offset..(self.offset + bytes.len())];
+        span.copy_from_slice(bytes);
+        self.offset += bytes.len();
+    }
+}
+impl<T: Pod> Extend<T> for BufferWriter<'_, T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for item in iter.into_iter() {
+            self.push(item);
+        }
+    }
+}
+
+pub struct Buffer<T> {
+    buffer: wgpu::Buffer,
+    _type: PhantomData<T>,
+}
+
+impl<T: Pod> Buffer<T> {
+    pub fn new(context: &Context, capacity: usize) -> Self {
+        assert!(capacity > 0);
+        let buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (capacity * std::mem::size_of::<T>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
-        })
-    }
-    pub fn new(context: &Context) -> Self {
-        let capacity = Self::MINIMUM_SIZE;
-        ResizableBuffer {
-            buffer: Self::create_buffer(&context.device, capacity),
-            length: 0,
-            capacity,
+        });
+        Buffer {
+            buffer,
             _type: PhantomData,
         }
     }
     pub fn buffer(&self) -> &wgpu::Buffer {
         &self.buffer
     }
-    pub fn len(&self) -> usize {
-        self.length
-    }
-    pub fn is_empty(&self) -> bool {
-        self.length == 0
+    pub fn capacity(&self) -> usize {
+        self.buffer.size() as usize / std::mem::size_of::<T>()
     }
     pub fn set_data(&mut self, context: &Context, data: &[T]) {
-        self.length = data.len();
         if data.is_empty() {
             return;
         }
-        let bytes = std::mem::size_of_val(data);
-        if bytes > self.capacity {
-            self.capacity = bytes.next_power_of_two();
-            self.buffer = Self::create_buffer(&context.device, self.capacity);
-        }
-        let mut write_view = context
+        context
             .queue
-            .write_buffer_with(&self.buffer, 0, NonZero::new(bytes as u64).unwrap())
-            .unwrap();
-        write_view.copy_from_slice(bytemuck::cast_slice(data));
+            .write_buffer(&self.buffer, 0, bytemuck::cast_slice(data));
+    }
+    pub fn write<'a>(&'a mut self, context: &'a Context) -> BufferWriter<'a, T> {
+        BufferWriter {
+            view: context
+                .queue
+                .write_buffer_with(&self.buffer, 0, self.buffer.size().try_into().unwrap())
+                .unwrap(),
+            offset: 0,
+            _type: PhantomData,
+        }
+    }
+}
+
+pub struct ResizableBuffer<T>(Buffer<T>, usize);
+
+impl<T: Pod> ResizableBuffer<T> {
+    const INITIAL_CAPACITY: usize = 64;
+    pub fn new(context: &Context) -> Self {
+        ResizableBuffer(Buffer::new(context, Self::INITIAL_CAPACITY), 0)
+    }
+    pub fn buffer(&self) -> &wgpu::Buffer {
+        self.0.buffer()
+    }
+    pub fn len(&self) -> usize {
+        self.1
+    }
+    pub fn is_empty(&self) -> bool {
+        self.1 == 0
+    }
+    pub fn set_data(&mut self, context: &Context, data: &[T]) {
+        let capacity = self.0.capacity();
+        if data.len() > capacity {
+            self.0 = Buffer::new(context, capacity * 2);
+        }
+        self.0.set_data(context, data);
+        self.1 = data.len();
     }
 }

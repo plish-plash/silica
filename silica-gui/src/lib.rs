@@ -1,72 +1,21 @@
-mod render;
+pub mod render;
 pub mod theme;
 mod widget;
 
 use std::{
     any::{Any, TypeId},
+    cell::RefCell,
     marker::PhantomData,
     rc::Rc,
 };
 
 pub use glyphon;
-use glyphon::FontSystem;
 pub use silica_color::Rgba;
-use silica_wgpu::SurfaceSize;
-pub use taffy::{
-    self,
-    style_helpers::{auto, length, percent, zero},
-    AlignItems, FlexDirection, JustifyContent, NodeId,
-};
-use taffy::{AvailableSpace, Layout, PrintTree, Style, TaffyTree, TraversePartialTree};
+pub use silica_layout::*;
+use silica_wgpu::{Context, ImmediateBatcher, UvRect, draw::draw_border, wgpu};
+use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
-pub use crate::{
-    render::*,
-    theme::{Theme, ThemeColor},
-    widget::*,
-};
-
-pub type Point = euclid::Point2D<f32, silica_wgpu::Surface>;
-pub type Vector = euclid::Vector2D<f32, silica_wgpu::Surface>;
-pub type Size = euclid::Size2D<f32, silica_wgpu::Surface>;
-pub type Rect = euclid::Box2D<f32, silica_wgpu::Surface>;
-pub type SideOffsets = euclid::SideOffsets2D<f32, silica_wgpu::Surface>;
-
-trait LayoutExt {
-    fn rect(&self) -> Rect;
-    fn border(&self) -> SideOffsets;
-    fn padding(&self) -> SideOffsets;
-    fn content_rect(&self) -> Rect;
-}
-
-impl LayoutExt for Layout {
-    fn rect(&self) -> Rect {
-        Rect::from_origin_and_size(
-            Point::new(self.location.x, self.location.y),
-            euclid::Size2D::new(self.size.width, self.size.height),
-        )
-    }
-    fn border(&self) -> SideOffsets {
-        SideOffsets::new(
-            self.border.top,
-            self.border.right,
-            self.border.bottom,
-            self.border.left,
-        )
-    }
-    fn padding(&self) -> SideOffsets {
-        SideOffsets::new(
-            self.padding.top,
-            self.padding.right,
-            self.padding.bottom,
-            self.padding.left,
-        )
-    }
-    fn content_rect(&self) -> Rect {
-        self.rect()
-            .inner_box(self.border())
-            .inner_box(self.padding())
-    }
-}
+pub use crate::widget::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Hotkey {
@@ -189,23 +138,43 @@ impl EventFn {
 #[derive(Default)]
 pub struct EventExecutor {
     funcs: Vec<(EventFn, Option<Box<dyn Any>>)>,
-    draw_dirty: bool,
+    redraw: bool,
 }
 
 impl EventExecutor {
     pub fn new() -> Self {
         EventExecutor::default()
     }
-    pub fn mark_draw_dirty(&mut self) {
-        self.draw_dirty = true;
-    }
     pub fn queue(&mut self, event: EventFn, param: Option<Box<dyn Any>>) {
         self.funcs.push((event, param));
     }
     pub fn execute(self, context: &mut impl EventContext) {
         for func in self.funcs {
-            func.0 .0(context, func.1);
+            func.0.0(context, func.1);
         }
+    }
+    pub fn request_redraw(&mut self) {
+        self.redraw = true;
+    }
+    pub fn needs_redraw(&self) -> bool {
+        self.redraw
+    }
+}
+
+#[derive(Clone)]
+pub struct FontSystem(Rc<RefCell<glyphon::FontSystem>>);
+
+impl FontSystem {
+    pub fn new(locale: String, db: glyphon::fontdb::Database) -> Self {
+        FontSystem(Rc::new(RefCell::new(
+            glyphon::FontSystem::new_with_locale_and_db(locale, db),
+        )))
+    }
+    pub fn with_system_fonts() -> Self {
+        FontSystem(Rc::new(RefCell::new(glyphon::FontSystem::new())))
+    }
+    pub fn borrow_mut(&self) -> std::cell::RefMut<glyphon::FontSystem> {
+        self.0.borrow_mut()
     }
 }
 
@@ -216,34 +185,19 @@ pub trait Upcast {
 
 #[allow(unused)]
 pub trait Widget: Upcast + 'static {
-    fn measure(
-        &mut self,
-        font_system: &mut FontSystem,
-        known_dimensions: taffy::Size<Option<f32>>,
-        available_space: taffy::Size<AvailableSpace>,
-    ) -> taffy::Size<f32> {
-        taffy::Size::ZERO
+    fn measure(&mut self, available_space: Size) -> Size {
+        Size::zero()
     }
-    fn layout(&mut self, font_system: &mut FontSystem, content_rect: Rect) {}
-    fn input(&mut self, input: &GuiInput, executor: &mut EventExecutor, rect: Rect) -> InputAction {
+    fn layout(&mut self, area: &Area) {}
+    fn input(
+        &mut self,
+        input: &GuiInput,
+        executor: &mut EventExecutor,
+        area: &Area,
+    ) -> InputAction {
         InputAction::Pass
     }
-    fn visible(&self) -> bool {
-        true
-    }
-    fn separate_layer(&self) -> bool {
-        false
-    }
-    fn draw_background<'a>(
-        &'a self,
-        batcher: &mut GuiBatcher<'a>,
-        theme: &dyn Theme,
-        rect: Rect,
-        border: SideOffsets,
-    ) {
-        theme.draw_border(batcher, rect, border);
-    }
-    fn draw<'a>(&'a self, batcher: &mut GuiBatcher<'a>, theme: &dyn Theme, content_rect: Rect);
+    fn draw(&mut self, renderer: &mut render::GuiRenderer, area: &Area);
 }
 
 impl<T: Widget> Upcast for T {
@@ -254,6 +208,16 @@ impl<T: Widget> Upcast for T {
         self
     }
 }
+impl LayoutWidget for Box<dyn Widget> {
+    fn measure(&mut self, available_space: Size) -> Size {
+        Widget::measure(self.as_mut(), available_space)
+    }
+    fn layout(&mut self, area: &Area) {
+        Widget::layout(self.as_mut(), area)
+    }
+}
+
+new_key_type! { pub struct NodeId; }
 
 #[derive(PartialEq, Eq, Hash)]
 pub struct WidgetId<T>(NodeId, PhantomData<T>);
@@ -270,261 +234,225 @@ impl<T> From<WidgetId<T>> for NodeId {
     }
 }
 
-struct WidgetLayout {
-    node: NodeId,
-    rect: Rect,
-    border: SideOffsets,
-    padding: SideOffsets,
-}
-
-impl WidgetLayout {
-    fn content_rect(&self) -> Rect {
-        self.rect.inner_box(self.border).inner_box(self.padding)
-    }
-}
+pub type Node = silica_layout::Node<NodeId, Box<dyn Widget>>;
 
 pub struct Gui {
     font_system: FontSystem,
-    tree: TaffyTree<Box<dyn Widget>>,
+    nodes: SlotMap<NodeId, Node>,
+    children: SecondaryMap<NodeId, Vec<NodeId>>,
     root: NodeId,
-    available_space: taffy::Size<AvailableSpace>,
-    layouts: Vec<Vec<WidgetLayout>>,
     input: GuiInput,
     grabbed_node: Option<NodeId>,
-    draw_dirty: bool,
+    layout_area: Rect,
+    needs_layout: bool,
+    batcher: Option<ImmediateBatcher<render::Quad>>,
 }
 
 impl Gui {
     pub fn new(font_system: FontSystem) -> Self {
-        let mut tree = TaffyTree::new();
-        let root = tree
-            .new_leaf(Style {
-                size: percent(1.0),
-                ..Default::default()
-            })
-            .unwrap();
+        let mut nodes = SlotMap::with_key();
+        let root = nodes.insert(Node::default());
         Gui {
             font_system,
-            tree,
+            nodes,
+            children: SecondaryMap::new(),
             root,
-            available_space: taffy::Size::max_content(),
-            layouts: Vec::new(),
             input: GuiInput::default(),
             grabbed_node: None,
-            draw_dirty: true,
+            layout_area: Rect::zero(),
+            needs_layout: false,
+            batcher: None,
         }
     }
-    pub fn font_system(&mut self) -> &mut FontSystem {
-        &mut self.font_system
+    pub fn font_system(&self) -> &FontSystem {
+        &self.font_system
     }
     pub fn root(&self) -> NodeId {
         self.root
     }
-    pub fn set_root(&mut self, root: NodeId) {
-        let mut layout = self.tree.style(root).unwrap().clone();
-        layout.size = percent(1.0);
-        self.tree.set_style(root, layout).unwrap();
-        self.root = root;
+    pub fn set_root(&mut self, root: impl Into<NodeId>) {
+        self.root = root.into();
+        self.needs_layout = true;
     }
     pub fn clear(&mut self) {
-        self.tree.clear();
-        self.root = self
-            .tree
-            .new_leaf(Style {
-                size: percent(1.0),
-                ..Default::default()
-            })
-            .unwrap();
+        self.nodes.clear();
+        self.children.clear();
+        self.root = self.nodes.insert(Node::default());
+        self.needs_layout = true;
     }
     pub fn get_widget<W: Widget>(&self, id: WidgetId<W>) -> Option<&W> {
-        self.tree.get_node_context(id.0).map(|context| {
-            context
-                .as_any()
-                .downcast_ref()
-                .expect("WidgetId has incorrect type")
-        })
+        self.nodes
+            .get(id.into())
+            .and_then(|node| node.widget.as_ref())
+            .map(|widget| {
+                widget
+                    .as_any()
+                    .downcast_ref()
+                    .expect("WidgetId has incorrect type")
+            })
     }
     pub fn get_widget_mut<W: Widget>(&mut self, id: WidgetId<W>) -> Option<&mut W> {
-        self.tree.get_node_context_mut(id.0).map(|context| {
-            context
-                .as_any_mut()
-                .downcast_mut()
-                .expect("WidgetId has incorrect type")
-        })
-    }
-    pub fn get_widget_and_font_system<W: Widget>(
-        &mut self,
-        id: WidgetId<W>,
-    ) -> Option<(&mut W, &mut FontSystem)> {
-        self.tree.get_node_context_mut(id.0).map(|context| {
-            (
-                context
+        self.nodes
+            .get_mut(id.into())
+            .and_then(|node| node.widget.as_mut())
+            .map(|widget| {
+                widget
                     .as_any_mut()
                     .downcast_mut()
-                    .expect("WidgetId has incorrect type"),
-                &mut self.font_system,
-            )
-        })
+                    .expect("WidgetId has incorrect type")
+            })
     }
     #[must_use]
-    pub fn create_widget<W: Widget>(&mut self, layout: Style, widget: W) -> WidgetId<W> {
+    pub fn create_widget<W: Widget>(&mut self, style: Style, widget: W) -> WidgetId<W> {
         WidgetId(
-            self.tree
-                .new_leaf_with_context(layout, Box::new(widget))
-                .unwrap(),
+            self.nodes.insert(Node::new(style, Some(Box::new(widget)))),
             PhantomData,
         )
     }
     #[must_use]
-    pub fn create_node(&mut self, layout: Style) -> NodeId {
-        self.tree.new_leaf(layout).unwrap()
+    pub fn create_node(&mut self, style: Style) -> NodeId {
+        self.nodes.insert(Node::new(style, None))
     }
-    #[must_use]
-    pub fn create_node_with_children(&mut self, layout: Style, children: &[NodeId]) -> NodeId {
-        self.tree.new_with_children(layout, children).unwrap()
+    pub(crate) fn set_node_children(&mut self, node: impl Into<NodeId>, children: Vec<NodeId>) {
+        if !children.is_empty() {
+            self.children.insert(node.into(), children);
+            self.needs_layout = true;
+        }
     }
-    pub fn set_node_widget<W: Widget>(&mut self, node: NodeId, widget: W) -> WidgetId<W> {
-        self.tree
-            .set_node_context(node, Some(Box::new(widget)))
-            .unwrap();
-        WidgetId(node, PhantomData)
-    }
-    pub fn delete(&mut self, node: impl Into<NodeId>) {
+    fn delete(&mut self, node: impl Into<NodeId>) {
+        // node must not have a parent!
         let node = node.into();
         self.delete_children(node);
-        self.tree.remove(node).unwrap();
+        self.nodes.remove(node);
     }
     pub fn delete_children(&mut self, parent: impl Into<NodeId>) {
-        let children = self.tree.children(parent.into()).unwrap();
-        for child in children {
-            self.delete(child);
+        if let Some(children) = self.children.remove(parent.into()) {
+            for child in children {
+                self.delete(child);
+            }
+            self.needs_layout = true;
         }
     }
     pub fn add_child(&mut self, parent: impl Into<NodeId>, child: impl Into<NodeId>) {
-        self.tree.add_child(parent.into(), child.into()).unwrap();
+        self.children
+            .entry(parent.into())
+            .unwrap()
+            .or_default()
+            .push(child.into());
+        self.needs_layout = true;
     }
-    pub fn remove_child(&mut self, parent: impl Into<NodeId>, child: impl Into<NodeId>) {
-        self.tree.remove_child(parent.into(), child.into()).unwrap();
+    pub fn remove_child(&mut self, parent: impl Into<NodeId>, child: impl Into<NodeId>) -> bool {
+        let children = self.children.get_mut(parent.into()).unwrap();
+        let child = child.into();
+        children.retain(|c| *c != child);
+        self.needs_layout = true;
+        true
     }
-    pub fn set_layout(&mut self, node: impl Into<NodeId>, mut layout: Style) {
-        let node = node.into();
-        if node == self.root {
-            layout.size = percent(1.0);
-        }
-        self.tree.set_style(node, layout).unwrap();
+    pub fn set_style(&mut self, node: impl Into<NodeId>, style: Style) {
+        self.nodes.get_mut(node.into()).unwrap().style = style;
+        self.needs_layout = true;
     }
-    pub fn dirty(&self) -> bool {
-        let layout_dirty = self.tree.dirty(self.root).unwrap();
-        layout_dirty || self.draw_dirty
+    pub fn needs_layout(&self) -> bool {
+        self.needs_layout
     }
-    pub fn mark_layout_dirty(&mut self, node: impl Into<NodeId>) {
-        self.tree.mark_dirty(node.into()).unwrap();
-    }
-    pub fn mark_draw_dirty(&mut self) {
-        self.draw_dirty = true;
+    pub fn request_layout(&mut self) {
+        self.needs_layout = true;
     }
 
-    pub fn set_available_space(&mut self, available_space: taffy::Size<AvailableSpace>) {
-        self.available_space = available_space;
-        self.mark_layout_dirty(self.root);
-    }
-    pub fn set_surface_size(&mut self, size: SurfaceSize) {
-        self.set_available_space(taffy::Size {
-            width: AvailableSpace::Definite(size.width as f32),
-            height: AvailableSpace::Definite(size.height as f32),
-        });
-    }
-    fn update_layout_data(&mut self, node: NodeId, mut layer: usize, mut offset: Vector) {
-        let mut visible = true;
-        let layout = self.tree.get_final_layout(node);
-        let rect = layout.rect().translate(offset);
-        offset.x += layout.location.x;
-        offset.y += layout.location.y;
-        let layout = WidgetLayout {
-            node,
-            rect,
-            border: layout.border(),
-            padding: layout.padding(),
-        };
-        if let Some(widget) = self.tree.get_node_context_mut(node) {
-            visible = widget.visible();
-            if visible {
-                widget.layout(&mut self.font_system, layout.content_rect());
-                if widget.separate_layer() {
-                    layer += 1;
-                }
-                if layer >= self.layouts.len() {
-                    self.layouts.push(Vec::new());
-                }
-                self.layouts[layer].push(layout);
-            }
-        }
-        if visible {
-            for child_index in 0..self.tree.child_count(node) {
-                let child = self.tree.child_at_index(node, child_index).unwrap();
-                self.update_layout_data(child, layer, offset);
-            }
+    pub fn set_area(&mut self, area: Rect) {
+        if self.layout_area != area {
+            self.layout_area = area;
+            self.needs_layout = true;
         }
     }
     pub fn layout(&mut self) {
-        if !self.tree.dirty(self.root).unwrap() {
+        if self.needs_layout {
+            measure_and_layout(&mut self.nodes, &self.children, self.root, self.layout_area);
+            self.needs_layout = false;
+        }
+    }
+
+    fn render_node(
+        id: NodeId,
+        nodes: &mut SlotMap<NodeId, Node>,
+        children: &SecondaryMap<NodeId, Vec<NodeId>>,
+        renderer: &mut render::GuiRenderer,
+    ) {
+        let node = nodes.get_mut(id).unwrap();
+        if node.area.hidden {
             return;
         }
-        self.tree
-            .compute_layout_with_measure(
-                self.root,
-                self.available_space,
-                |known_dimensions, available_space, _node, context, _style| {
-                    if let taffy::Size {
-                        width: Some(width),
-                        height: Some(height),
-                    } = known_dimensions
-                    {
-                        taffy::Size { width, height }
-                    } else if let Some(widget) = context {
-                        widget.measure(&mut self.font_system, known_dimensions, available_space)
-                    } else {
-                        taffy::Size::ZERO
-                    }
-                },
-            )
-            .unwrap();
-        self.layouts.clear();
-        self.update_layout_data(self.root, 0, Vector::zero());
-        self.draw_dirty = true;
-    }
-    pub fn get_rect(&self, node: impl Into<NodeId>) -> Rect {
-        let mut node = node.into();
-        let layout = self.tree.get_final_layout(node);
-        let mut rect = layout.content_rect();
-        while let Some(parent) = self.tree.parent(node) {
-            let parent_layout = self.tree.get_final_layout(parent);
-            rect = rect.translate(Vector::new(
-                parent_layout.location.x,
-                parent_layout.location.y,
-            ));
-            node = parent;
+        if let Some(background_color) = node.style.background_color {
+            let color = renderer.theme().color(background_color);
+            renderer.draw_theme_quad(render::Quad {
+                rect: node.area.background_rect.to_box2d(),
+                uv: UvRect::zero(),
+                color,
+            });
         }
-        rect
+        if let Some(border_color) = node.style.border_color {
+            let color = renderer.theme().color(border_color);
+            draw_border(
+                renderer,
+                node.area.background_rect.to_box2d(),
+                node.style.border,
+                color,
+            );
+        }
+        if let Some(widget) = node.widget.as_mut() {
+            widget.draw(renderer, &node.area);
+        }
+        if let Some(node_children) = children.get(id) {
+            for child in node_children.iter() {
+                Self::render_node(*child, nodes, children, renderer);
+            }
+        }
+    }
+    pub fn render(
+        &mut self,
+        context: &Context,
+        pass: &mut wgpu::RenderPass,
+        resources: &mut render::GuiResources,
+    ) {
+        self.layout();
+        let batcher = self
+            .batcher
+            .take()
+            .unwrap_or_else(|| ImmediateBatcher::new(context));
+        let mut renderer = render::GuiRenderer {
+            resources,
+            batcher,
+            context,
+            pass,
+        };
+        Self::render_node(self.root, &mut self.nodes, &self.children, &mut renderer);
+        renderer.finish();
+        self.batcher = Some(renderer.batcher);
     }
 
     fn dispatch_input_event(
-        tree: &mut TaffyTree<Box<dyn Widget>>,
+        id: NodeId,
+        nodes: &mut SlotMap<NodeId, Node>,
+        children: &SecondaryMap<NodeId, Vec<NodeId>>,
         input: &mut GuiInput,
         grabbed_node: &mut Option<NodeId>,
-        node: NodeId,
-        rect: Rect,
         executor: &mut EventExecutor,
     ) {
-        if let Some(widget) = tree.get_node_context_mut(node) {
-            match widget.input(input, executor, rect) {
+        if let Some(node_children) = children.get(id) {
+            for child in node_children.iter().rev() {
+                Self::dispatch_input_event(*child, nodes, children, input, grabbed_node, executor);
+            }
+        }
+        let node = nodes.get_mut(id).unwrap();
+        if let Some(widget) = node.widget.as_mut() {
+            match widget.input(input, executor, &node.area) {
                 InputAction::Pass => {}
                 InputAction::Block => {
                     input.blocked = true;
                 }
                 InputAction::Grab => {
                     input.blocked = true;
-                    *grabbed_node = Some(node);
+                    *grabbed_node = Some(id);
                 }
             }
         }
@@ -535,37 +463,33 @@ impl Gui {
     ) -> (EventExecutor, Option<InputEvent<K, M>>) {
         self.input.process(&event);
         let mut executor = EventExecutor::new();
-        if let Some(node) = self.grabbed_node.take() {
+        if let Some(id) = self.grabbed_node.take() {
             self.input.grabbed = true;
-            let rect = self.get_rect(node);
             Self::dispatch_input_event(
-                &mut self.tree,
+                id,
+                &mut self.nodes,
+                &self.children,
                 &mut self.input,
                 &mut self.grabbed_node,
-                node,
-                rect,
                 &mut executor,
             );
         } else {
-            for layout in self.layouts.iter().flatten().rev() {
-                Self::dispatch_input_event(
-                    &mut self.tree,
-                    &mut self.input,
-                    &mut self.grabbed_node,
-                    layout.node,
-                    layout.rect,
-                    &mut executor,
-                );
-            }
+            Self::dispatch_input_event(
+                self.root,
+                &mut self.nodes,
+                &self.children,
+                &mut self.input,
+                &mut self.grabbed_node,
+                &mut executor,
+            );
         }
-        self.draw_dirty |= executor.draw_dirty;
-        let event = if self.input.blocked {
+        let unhandled_event = if self.input.blocked {
             None
         } else {
             Some(event)
         };
         self.input.reset();
-        (executor, event)
+        (executor, unhandled_event)
     }
 }
 impl EventContext for Gui {

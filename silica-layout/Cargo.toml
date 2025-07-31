@@ -1,15 +1,11 @@
 [package]
-name = "silica-gui"
+name = "silica-layout"
 version = "0.3.0"
 edition = "2024"
 
 [dependencies]
 silica-color = { path = "../silica-color" }
-silica-layout = { path = "../silica-layout" }
-silica-wgpu = { path = "../silica-wgpu" }
-log = "0.4"
 bytemuck = "1.23"
 serde = { version = "1.0", features = ["derive"] }
 euclid = { version = "0.22", features = ["bytemuck", "serde"] }
 slotmap = "1.0"
-glyphon = "0.9"

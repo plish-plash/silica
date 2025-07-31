@@ -1,77 +1,83 @@
 use silica_gui::*;
 
 fn build_gui(gui: &mut Gui) -> NodeId {
-    let label = Label::builder("Hello, World!").font_size(24.0).build(gui);
-    Node::builder()
-        .direction(taffy::FlexDirection::Column)
-        .align_items(taffy::AlignItems::Stretch)
-        .padding(taffy::Rect::length(16.0))
-        .gap(taffy::Size::length(16.0))
-        .child(label)
-        .child(
-            Node::builder()
-                .gap(taffy::Size::length(16.0))
-                .child(
-                    Button::builder(move |gui| {
-                        label.set_text(gui, "Pressed Normal Button");
-                    })
-                    .label("Normal Button")
-                    .grow(1.0)
-                    .build(gui),
+    let label = gui.create_widget(
+        Style {
+            background_color: Some(Color::Custom(Rgba::CYAN)),
+            ..Default::default()
+        },
+        LabelBuilder::new("Hello, World!")
+            .font_size(24.0)
+            .build(gui),
+    );
+    NodeBuilder::new()
+        .modify_style(|style| {
+            style.direction = Direction::Column;
+            // style.align_items = taffy::AlignItems::Stretch;
+            style.padding = SideOffsets::new_all_same(16);
+            style.gap = 16;
+        })
+        .with_child(label)
+        .with_child(
+            NodeBuilder::new()
+                .modify_style(|style| style.gap = 16)
+                .with_child(
+                    ButtonBuilder::new()
+                        .modify_style(|style| style.grow = true)
+                        .with_label(gui, "Normal Button")
+                        .build(gui, move |gui| {
+                            label.set_text(gui, "Pressed Normal Button");
+                        }),
                 )
-                .child(
-                    Button::toggle_builder(move |gui, toggled| {
-                        label.set_text(
-                            gui,
-                            &format!("Toggle Button {}", if toggled { "On" } else { "Off" }),
-                        );
-                    })
-                    .label("Toggle Button")
-                    .grow(1.0)
-                    .build(gui),
+                .with_child(
+                    ButtonBuilder::new()
+                        .modify_style(|style| style.grow = true)
+                        .with_label(gui, "Toggle Button")
+                        .build_toggle(gui, move |gui, toggled| {
+                            label.set_text(
+                                gui,
+                                &format!("Toggle Button {}", if toggled { "On" } else { "Off" }),
+                            );
+                        }),
                 )
-                .child(
-                    Button::builder(move |gui| {
-                        label.set_text(gui, "Pressed Confirm Button");
-                    })
-                    .label("Confirm Button")
-                    .theme(ButtonTheme::Confirm)
-                    .grow(1.0)
-                    .build(gui),
+                .with_child(
+                    ButtonBuilder::new()
+                        .modify_style(|style| style.grow = true)
+                        .with_button_style(ButtonStyle::Confirm)
+                        .with_label(gui, "Confirm Button")
+                        .build(gui, move |gui| {
+                            label.set_text(gui, "Pressed Confirm Button");
+                        }),
                 )
-                .child(
-                    Button::builder(move |gui| {
-                        label.set_text(gui, "Pressed Delete Button");
-                    })
-                    .label("Delete Button")
-                    .theme(ButtonTheme::Delete)
-                    .grow(1.0)
-                    .build(gui),
+                .with_child(
+                    ButtonBuilder::new()
+                        .modify_style(|style| style.grow = true)
+                        .with_button_style(ButtonStyle::Delete)
+                        .with_label(gui, "Delete Button")
+                        .build(gui, move |gui| {
+                            label.set_text(gui, "Pressed Delete Button");
+                        }),
                 )
                 .build(gui),
         )
-        .child({
+        .with_child({
             let group = ExclusiveGroup::new(false, move |gui, index| {
                 label.set_text(
                     gui,
                     &format!("Selected Tab {}", index.map(|i| i + 1).unwrap_or_default()),
                 );
             });
-            let buttons = ExclusiveButtons::new_tabs(
-                gui,
-                group,
-                Some(1),
-                taffy::Style {
-                    gap: taffy::Size::length(4.0),
-                    ..Default::default()
-                },
-            );
+            let buttons = gui.create_node(Style {
+                gap: 4,
+                ..Default::default()
+            });
             for (index, label) in ["One", "Two", "Three", "Four"].into_iter().enumerate() {
-                buttons
-                    .add_button()
-                    .label(label)
-                    .hotkey(Hotkey::new(char::from_digit(index as u32 + 1, 10).unwrap()))
-                    .build(gui);
+                ButtonBuilder::new()
+                    .with_parent(buttons)
+                    .with_label(gui, label)
+                    .with_hotkey(Hotkey::new(char::from_digit(index as u32 + 1, 10).unwrap()))
+                    .toggled(index == 1)
+                    .build_exclusive(gui, &group);
             }
             buttons
         })
@@ -79,10 +85,8 @@ fn build_gui(gui: &mut Gui) -> NodeId {
 }
 
 fn main() {
-    let mut gui = Gui::new(glyphon::FontSystem::new());
+    let mut gui = Gui::new(FontSystem::with_system_fonts());
     let root = build_gui(&mut gui);
     gui.set_root(root);
-
-    let theme_loader = theme::StandardThemeLoader::new(include_bytes!("theme.data"));
-    silica_window::run_app(gui, theme_loader).unwrap();
+    silica_window::run_gui_app(gui, include_bytes!("theme.data")).unwrap();
 }

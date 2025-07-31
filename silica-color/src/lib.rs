@@ -8,17 +8,9 @@
 //! However, for modern rendering systems, you should use linear RGB basically all of the time.
 //! Colors must be in linear space to be blended correctly. Shaders will convert all input colors to
 //! linear if they aren't already, and the graphics pipeline will automatically convert the output
-//! to whatever the screen is expecting. So it's typically much simpler to use linear colors
+//! to whatever the screen is expecting. So it makes things simpler to use linear colors
 //! everywhere. That way CPU-side color operations behave the same way they do in shaders, and
-//! there's no need to do any conversion yourself.
-//!
-//! But, I hear you asking, what about when I load an image file, or let a user type in a hex code?
-//! Aren't those in sRGB? It's true that image formats like png can specify a color space, and the
-//! color space of hex codes depends on the application that created them. But in practice, these
-//! are nearly always in linear RGB, despite what many sources claim. Artists already need to work
-//! in linear space for blending to make sense, so why bother converting to sRGB?
-//! sRGB (and premultiplied alpha) should be viewed as an implementation detail of the rendering
-//! system, not a standard for storage.
+//! there's no need to do any conversions.
 //!
 //! This crate provides `Rgba` for working with linear RGBA. It contains four f32s and is repr(C),
 //! which is what most graphics pipelines expect. It provides all the operations needed for typical
@@ -34,12 +26,11 @@
 //! the color crates I've seen are *heavily* focused on color space management and conversion, and
 //! often fall flat if you need to do more than the simplest of operations on the colors themselves.
 //! Here are some specific needs I have:
-//! - I need to be able to serialize and deserialize colors with a simple structure. Alpha should
-//!   default to 1 if not specified, since opaque colors are very common.
-//! - I need to be able to convert to and from u32 hex codes.
-//! - I rarely, if ever, want to store colors as u8s, since they need to be converted to f32s for
-//!   many operations (and rendering).
-//! - I need constants for black and white.
+//! - Stored as repr(C) f32s to be easy to use in wgpu shaders.
+//! - Serialize and deserialize in a straightforward way. Alpha should default to 1 if not
+//!   specified, since opaque colors are very common.
+//! - Convert to and from u32 linear hex codes.
+//! - Constants for black and white.
 //!
 //! These requirements seem quite minimal, but I wasn't able to find a crate that satisfied them
 //! all. So, here we are.

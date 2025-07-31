@@ -1,10 +1,9 @@
+mod gui;
+
 use std::sync::Arc;
 
-use silica_gui::{
-    theme::{Theme, ThemeLoader},
-    Gui, GuiRenderer, Hotkey, Point,
-};
-use silica_wgpu::{wgpu, AdapterFeatures, Context, Surface, SurfaceSize, Texture, TextureConfig};
+use silica_gui::{Hotkey, Point};
+use silica_wgpu::{Context, Surface, SurfaceSize, wgpu};
 use winit::{
     application::ApplicationHandler,
     error::EventLoopError,
@@ -14,7 +13,9 @@ use winit::{
     window::{Window, WindowId},
 };
 
-struct KeyboardEvent(ElementState, SmolStr, ModifiersState);
+pub use crate::gui::*;
+
+pub struct KeyboardEvent(ElementState, SmolStr, ModifiersState);
 
 impl silica_gui::KeyboardEvent for KeyboardEvent {
     fn to_hotkey(&self) -> Option<Hotkey> {
@@ -30,7 +31,7 @@ impl silica_gui::KeyboardEvent for KeyboardEvent {
     }
 }
 
-struct MouseButtonEvent(MouseButton, ElementState);
+pub struct MouseButtonEvent(MouseButton, ElementState);
 
 impl silica_gui::MouseButtonEvent for MouseButtonEvent {
     fn is_primary_button(&self) -> bool {
@@ -43,54 +44,27 @@ impl silica_gui::MouseButtonEvent for MouseButtonEvent {
 
 type InputEvent = silica_gui::InputEvent<KeyboardEvent, MouseButtonEvent>;
 
-enum GuiRendererInit {
-    Uninit(Option<(TextureConfig, Texture, Box<dyn Theme>)>),
-    Init(GuiRenderer),
+pub trait App {
+    fn input_event(&mut self, window: &Window, event: InputEvent);
+    fn resize(&mut self, context: &Context, size: SurfaceSize);
+    fn render(
+        &mut self,
+        context: &Context,
+        view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+    );
 }
 
-impl GuiRendererInit {
-    fn init(&mut self, context: &Context, surface_format: wgpu::TextureFormat) {
-        if let GuiRendererInit::Uninit(opt) = self {
-            let (texture_config, theme_texture, theme) = opt.take().unwrap();
-            *self = GuiRendererInit::Init(GuiRenderer::with_preloaded_theme(
-                context,
-                surface_format,
-                &texture_config,
-                theme_texture,
-                theme,
-            ));
-        }
-    }
-    #[track_caller]
-    fn unwrap(&mut self) -> &mut GuiRenderer {
-        match self {
-            GuiRendererInit::Uninit(..) => {
-                panic!("attempted to unwrap an uninitialized GuiRenderer")
-            }
-            GuiRendererInit::Init(renderer) => renderer,
-        }
-    }
-}
-
-struct App {
+struct WindowApp<T> {
     window: Option<Arc<Window>>,
     context: Context,
     surface: Surface,
-    gui: Gui,
-    gui_renderer: GuiRendererInit,
     modifiers: ModifiersState,
+    app: T,
 }
 
-impl App {
-    fn input_event(&mut self, event: InputEvent) {
-        let (executor, _) = self.gui.input_event(event);
-        executor.execute(&mut self.gui);
-        if self.gui.dirty() {
-            self.window.as_ref().unwrap().request_redraw();
-        }
-    }
+impl<T: App> WindowApp<T> {
     fn render(&mut self) {
-        let gui_renderer = self.gui_renderer.unwrap();
         let frame = self.surface.acquire(&self.context);
         let view: wgpu::TextureView = frame
             .texture
@@ -99,35 +73,14 @@ impl App {
             .context
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        {
-            let clear_color = gui_renderer.background_color();
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: clear_color.r as f64,
-                            g: clear_color.g as f64,
-                            b: clear_color.b as f64,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            gui_renderer.render(&self.context, &mut pass, &mut self.gui);
-        }
+        self.app.render(&self.context, &view, &mut encoder);
         self.context.queue.submit([encoder.finish()]);
         self.window.as_ref().unwrap().pre_present_notify();
         frame.present();
     }
 }
-impl ApplicationHandler for App {
+
+impl<T: App> ApplicationHandler for WindowApp<T> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(
             event_loop
@@ -137,12 +90,10 @@ impl ApplicationHandler for App {
         let size = window.inner_size();
         self.window = Some(window.clone());
         self.surface.resume(
-            &self.context,
+            &mut self.context,
             window,
             SurfaceSize::new(size.width, size.height),
         );
-        self.gui_renderer
-            .init(&self.context, self.surface.config().format);
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
@@ -150,6 +101,7 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        let window = self.window.as_ref().unwrap();
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -157,23 +109,23 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(size) => {
                 let size = SurfaceSize::new(size.width, size.height);
                 self.surface.resize(&self.context, size);
-                self.gui_renderer
-                    .unwrap()
-                    .surface_resize(&self.context, size);
-                self.gui.set_surface_size(size);
-                self.window.as_ref().unwrap().request_redraw();
+                self.app.resize(&self.context, size);
+                window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
                 self.render();
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.input_event(InputEvent::MouseMotion(Point::new(
-                    position.x as f32,
-                    position.y as f32,
-                )));
+                self.app.input_event(
+                    window,
+                    InputEvent::MouseMotion(Point::new(position.x as i32, position.y as i32)),
+                );
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                self.input_event(InputEvent::MouseButton(MouseButtonEvent(button, state)));
+                self.app.input_event(
+                    window,
+                    InputEvent::MouseButton(MouseButtonEvent(button, state)),
+                );
             }
             WindowEvent::KeyboardInput {
                 event,
@@ -182,11 +134,10 @@ impl ApplicationHandler for App {
             } => {
                 if !event.repeat {
                     if let Some(text) = event.text {
-                        self.input_event(InputEvent::Keyboard(KeyboardEvent(
-                            event.state,
-                            text,
-                            self.modifiers,
-                        )));
+                        self.app.input_event(
+                            window,
+                            InputEvent::Keyboard(KeyboardEvent(event.state, text, self.modifiers)),
+                        );
                     }
                 }
             }
@@ -198,32 +149,16 @@ impl ApplicationHandler for App {
     }
 }
 
-pub fn run_app(gui: Gui, theme_loader: impl ThemeLoader) -> Result<(), EventLoopError> {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Trace)
-        .filter_module("calloop", log::LevelFilter::Info)
-        .filter_module("wgpu_core", log::LevelFilter::Info)
-        .filter_module("wgpu_hal", log::LevelFilter::Warn)
-        .filter_module("naga", log::LevelFilter::Info)
-        .filter_module("cosmic_text", log::LevelFilter::Info)
-        .parse_default_env()
-        .init();
-
-    let context = Context::init(AdapterFeatures::default());
-    let texture_config = TextureConfig::new(&context, wgpu::FilterMode::Linear);
-    let theme_texture = theme_loader.load_texture(&context, &texture_config);
-    let theme = theme_loader.load_theme();
-
+pub fn run_app<T: App>(context: Context, app: T) -> Result<(), EventLoopError> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App {
+    let mut window_app = WindowApp {
         window: None,
         context,
         surface: Surface::new(),
-        gui,
-        gui_renderer: GuiRendererInit::Uninit(Some((texture_config, theme_texture, theme))),
         modifiers: ModifiersState::empty(),
+        app,
     };
-    event_loop.run_app(&mut app)?;
+    event_loop.run_app(&mut window_app)?;
     Ok(())
 }
