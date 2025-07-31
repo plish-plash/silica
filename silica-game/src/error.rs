@@ -84,7 +84,10 @@ pub(crate) fn error_gui(error: GameError) -> Gui {
     log::error!("{error}");
     let mut gui = Gui::new(crate::load_fonts().unwrap_display());
     let root = NodeBuilder::new()
-        .modify_style(|style| style.align = Align::Center)
+        .modify_style(|style| {
+            style.layout = Layout::Stack;
+            style.align = Align::Center;
+        })
         .child(
             NodeBuilder::new()
                 .modify_style(|style| {

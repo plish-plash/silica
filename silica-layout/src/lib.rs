@@ -6,7 +6,7 @@ use euclid::{point2, size2};
 use silica_color::Rgba;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
-pub use crate::layout::*;
+use crate::layout::*;
 
 pub struct Pixel;
 
@@ -44,7 +44,7 @@ impl Layout {
         match self {
             Layout::None => Size::zero(),
             Layout::Box => BoxLayout::measure(nodes, children, id, available_space),
-            Layout::Stack => todo!(),
+            Layout::Stack => StackLayout::measure(nodes, children, id, available_space),
         }
     }
     fn layout<Id: Key, Widget: LayoutWidget>(
@@ -57,7 +57,7 @@ impl Layout {
         match self {
             Layout::None => (),
             Layout::Box => BoxLayout::layout(nodes, children, id, rect),
-            Layout::Stack => todo!(),
+            Layout::Stack => StackLayout::layout(nodes, children, id, rect),
         }
     }
 }
@@ -117,17 +117,17 @@ pub enum Align {
 }
 
 impl Align {
-    fn align_area(&self, direction: Direction, mut rect: Rect, size: Size) -> Rect {
+    fn align_area(&self, horizontal: bool, mut rect: Rect, size: Size) -> Rect {
         if *self != Align::Stretch {
-            let (inner_size, outer_size) = if direction.horizontal() {
-                (
-                    size.height,
-                    std::mem::replace(&mut rect.size.height, size.height),
-                )
-            } else {
+            let (inner_size, outer_size) = if horizontal {
                 (
                     size.width,
                     std::mem::replace(&mut rect.size.width, size.width),
+                )
+            } else {
+                (
+                    size.height,
+                    std::mem::replace(&mut rect.size.height, size.height),
                 )
             };
             let offset = match self {
@@ -135,10 +135,10 @@ impl Align {
                 Align::Center => (outer_size - inner_size) / 2,
                 _ => 0,
             };
-            if direction.horizontal() {
-                rect.origin.y += offset;
-            } else {
+            if horizontal {
                 rect.origin.x += offset;
+            } else {
+                rect.origin.y += offset;
             }
         }
         rect

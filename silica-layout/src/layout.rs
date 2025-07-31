@@ -103,8 +103,55 @@ impl LayoutProvider for BoxLayout {
                 child_size += grow_space;
             }
             let mut child_rect = direction.layout_area(&mut rect, child_size, gap);
-            child_rect = align.align_area(direction, child_rect, child_size);
+            child_rect = align.align_area(!direction.horizontal(), child_rect, child_size);
             layout(nodes, children, *child_id, child_rect);
+        }
+    }
+}
+
+pub struct StackLayout;
+
+impl LayoutProvider for StackLayout {
+    fn measure<Id: Key, Widget: LayoutWidget>(
+        nodes: &mut SlotMap<Id, Node<Id, Widget>>,
+        children: &SecondaryMap<Id, Vec<Id>>,
+        id: Id,
+        available_space: Size,
+    ) -> Size {
+        let mut size = Size::zero();
+        if let Some(child_ids) = children.get(id) {
+            for child_id in child_ids.iter() {
+                let child_size = measure(nodes, children, *child_id, available_space);
+                size = size.max(child_size);
+            }
+        }
+        size
+    }
+    fn layout<Id: Key, Widget: LayoutWidget>(
+        nodes: &mut SlotMap<Id, Node<Id, Widget>>,
+        children: &SecondaryMap<Id, Vec<Id>>,
+        id: Id,
+        rect: Rect,
+    ) {
+        let direction = nodes[id].style.direction;
+        if let Some(child_ids) = children.get(id) {
+            for child_id in child_ids.iter() {
+                let child = &nodes[*child_id];
+                let child_size = child.area.measured_size;
+                let main_align = if child.style.grow {
+                    Align::Stretch
+                } else {
+                    Align::Center
+                };
+                let mut child_rect =
+                    main_align.align_area(direction.horizontal(), rect, child_size);
+                child_rect =
+                    child
+                        .style
+                        .align
+                        .align_area(!direction.horizontal(), child_rect, child_size);
+                layout(nodes, children, *child_id, child_rect);
+            }
         }
     }
 }
