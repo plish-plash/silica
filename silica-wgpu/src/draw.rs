@@ -34,13 +34,14 @@ pub trait DrawQuad<T, U> {
 
 pub fn draw_border<U>(
     drawer: &mut impl DrawQuad<i32, U>,
-    rect: Box2D<i32, U>,
+    mut rect: Box2D<i32, U>,
     border: SideOffsets2D<i32, U>,
     color: Rgba,
 ) {
     if rect.is_empty() {
         return;
     }
+    rect = rect.outer_box(border);
     let tl = rect.top_left();
     let tr = rect.top_right();
     let bl = rect.bottom_left();

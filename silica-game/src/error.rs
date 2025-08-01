@@ -86,13 +86,14 @@ pub(crate) fn error_gui(error: GameError) -> Gui {
     let root = NodeBuilder::new()
         .modify_style(|style| {
             style.layout = Layout::Stack;
-            style.align = Align::Center;
+            style.main_align = Align::Center;
+            style.cross_align = Align::Center;
         })
         .child(
             NodeBuilder::new()
                 .modify_style(|style| {
                     style.direction = Direction::Column;
-                    style.align = Align::Center;
+                    style.cross_align = Align::Center;
                     style.border = SideOffsets::new_all_same(1);
                     style.padding = SideOffsets::new(16, 8, 16, 8);
                     style.gap = 16;

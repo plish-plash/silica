@@ -461,7 +461,7 @@ impl Button {
     fn default_style() -> Style {
         Style {
             min_size: Self::MIN_SIZE,
-            align: Align::Center,
+            cross_align: Align::Center,
             ..Default::default()
         }
     }

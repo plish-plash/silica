@@ -66,7 +66,8 @@ impl LayoutProvider for BoxLayout {
         };
         let style = &nodes[id].style;
         let direction = style.direction;
-        let align = style.align;
+        let main_align = style.main_align;
+        let cross_align = style.cross_align;
         let gap = style.gap;
         let mut used_size = Size::zero();
         let mut grow_count = 0;
@@ -81,19 +82,23 @@ impl LayoutProvider for BoxLayout {
                 grow_count += 1;
             }
         }
-        let grow_space = if grow_count > 0 {
-            if direction.horizontal() {
-                Size::new(
-                    (rect.size.width - used_size.width + gap).max(0) / grow_count,
-                    0,
-                )
-            } else {
-                Size::new(
-                    0,
-                    (rect.size.height - used_size.height + gap).max(0) / grow_count,
-                )
-            }
+        let unused_size = if direction.horizontal() {
+            Size::new((rect.size.width - used_size.width + gap).max(0), 0)
         } else {
+            Size::new(0, (rect.size.height - used_size.height + gap).max(0))
+        };
+        let grow_space = if grow_count > 0 {
+            unused_size / grow_count
+        } else {
+            match main_align {
+                Align::End => {
+                    direction.layout_area(&mut rect, unused_size, 0);
+                }
+                Align::Center => {
+                    direction.layout_area(&mut rect, unused_size / 2, 0);
+                }
+                _ => {}
+            }
             Size::zero()
         };
         for child_id in child_ids.iter() {
@@ -103,7 +108,7 @@ impl LayoutProvider for BoxLayout {
                 child_size += grow_space;
             }
             let mut child_rect = direction.layout_area(&mut rect, child_size, gap);
-            child_rect = align.align_area(!direction.horizontal(), child_rect, child_size);
+            child_rect = cross_align.align_area(!direction.horizontal(), child_rect, child_size);
             layout(nodes, children, *child_id, child_rect);
         }
     }
@@ -133,23 +138,25 @@ impl LayoutProvider for StackLayout {
         id: Id,
         rect: Rect,
     ) {
-        let direction = nodes[id].style.direction;
+        let style = &nodes[id].style;
+        let direction = style.direction;
+        let main_align = style.main_align;
         if let Some(child_ids) = children.get(id) {
             for child_id in child_ids.iter() {
                 let child = &nodes[*child_id];
                 let child_size = child.area.measured_size;
-                let main_align = if child.style.grow {
+                let grow_align = if child.style.grow {
                     Align::Stretch
                 } else {
-                    Align::Center
+                    main_align
                 };
                 let mut child_rect =
-                    main_align.align_area(direction.horizontal(), rect, child_size);
-                child_rect =
-                    child
-                        .style
-                        .align
-                        .align_area(!direction.horizontal(), child_rect, child_size);
+                    grow_align.align_area(direction.horizontal(), rect, child_size);
+                child_rect = child.style.cross_align.align_area(
+                    !direction.horizontal(),
+                    child_rect,
+                    child_size,
+                );
                 layout(nodes, children, *child_id, child_rect);
             }
         }
