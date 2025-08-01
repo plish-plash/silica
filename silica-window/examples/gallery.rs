@@ -1,5 +1,6 @@
 use silica_gui::*;
 use silica_wgpu::{AdapterFeatures, Context};
+use silica_window::{Window, run_gui_app};
 
 fn build_gui(gui: &mut Gui) -> NodeId {
     let label = LabelBuilder::new("Hello, World!")
@@ -84,5 +85,11 @@ fn main() {
     let root = build_gui(&mut gui);
     gui.set_root(root);
     let context = Context::init(AdapterFeatures::default());
-    silica_window::run_gui_app(context, gui, include_bytes!("theme.data")).unwrap();
+    run_gui_app(
+        Window::default_attributes().with_title("Gallery Example"),
+        context,
+        gui,
+        include_bytes!("theme.data"),
+    )
+    .unwrap();
 }

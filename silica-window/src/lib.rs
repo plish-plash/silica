@@ -12,7 +12,11 @@ use winit::{
     keyboard::{KeyCode, ModifiersState, PhysicalKey, SmolStr},
     window::WindowId,
 };
-pub use winit::{event_loop::ActiveEventLoop, keyboard, window::Window};
+pub use winit::{
+    event_loop::ActiveEventLoop,
+    keyboard,
+    window::{Icon, Window, WindowAttributes},
+};
 
 pub use crate::gui::*;
 
@@ -75,6 +79,7 @@ pub trait App {
 }
 
 struct WindowApp<T> {
+    window_attributes: WindowAttributes,
     window: Option<Arc<Window>>,
     context: Context,
     surface: Surface,
@@ -104,7 +109,7 @@ impl<T: App> ApplicationHandler for WindowApp<T> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = Arc::new(
             event_loop
-                .create_window(Window::default_attributes())
+                .create_window(self.window_attributes.clone())
                 .unwrap(),
         );
         let size = window.inner_size();
@@ -180,7 +185,11 @@ impl<T: App> ApplicationHandler for WindowApp<T> {
     }
 }
 
-pub fn run_app<T: App>(context: Context, app: T) -> Result<(), EventLoopError> {
+pub fn run_app<T: App>(
+    window_attributes: WindowAttributes,
+    context: Context,
+    app: T,
+) -> Result<(), EventLoopError> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(if T::RUN_CONTINUOUSLY {
         ControlFlow::Poll
@@ -188,6 +197,7 @@ pub fn run_app<T: App>(context: Context, app: T) -> Result<(), EventLoopError> {
         ControlFlow::Wait
     });
     let mut window_app = WindowApp {
+        window_attributes,
         window: None,
         context,
         surface: Surface::new(),

@@ -1,5 +1,6 @@
 use silica_game::{
-    EventLoop, Game, GameError, Image, InputEvent, Rgba, app_info,
+    AssetPath, EventLoop, Game, GameError, Image, InputEvent, Rgba, Window, WindowAttributes,
+    app_info,
     keyboard::KeyCode,
     render::{Batcher, Context, SurfaceSize, Texture, TextureConfig, Uv, wgpu},
     run_game,
@@ -55,9 +56,13 @@ struct WasdGame {
 }
 
 impl Game for WasdGame {
+    fn window_attributes() -> WindowAttributes {
+        Window::default_attributes().with_title("WASD Example")
+    }
     fn load(context: &Context) -> Result<Self, GameError> {
         let texture_config = TextureConfig::new(context, wgpu::FilterMode::Linear);
-        let player_texture = Image::load_texture(context, &texture_config, "player.png")?;
+        let player_texture =
+            Image::load_asset(AssetPath("player.png"))?.create_texture(context, &texture_config);
         Ok(WasdGame {
             texture_config,
             pipeline: None,

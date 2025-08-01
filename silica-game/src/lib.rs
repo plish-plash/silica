@@ -24,9 +24,10 @@ use silica_gui::{
 pub use silica_wgpu as render;
 use silica_wgpu::{AdapterFeatures, Context, SurfaceSize, TextureConfig, wgpu};
 pub use silica_window::{
-    ActiveEventLoop as EventLoop, InputEvent, KeyboardEvent, MouseButtonEvent, keyboard,
+    ActiveEventLoop as EventLoop, Icon, InputEvent, KeyboardEvent, MouseButtonEvent, Window,
+    WindowAttributes, keyboard,
 };
-use silica_window::{App, Window, run_app, run_gui_app};
+use silica_window::{App, run_app, run_gui_app};
 
 pub use crate::{
     error::{GameError, ResultExt},
@@ -120,6 +121,7 @@ pub fn load_gui_theme(
 }
 
 pub trait Game: Sized {
+    fn window_attributes() -> WindowAttributes;
     fn load(context: &Context) -> Result<Self, GameError>;
     fn close_window(&mut self) -> bool {
         true
@@ -190,6 +192,7 @@ pub fn run_game<T: Game>(app_info: AppInfo) {
     let context = Context::init(AdapterFeatures::default());
     match T::load(&context) {
         Ok(game) => run_app(
+            T::window_attributes(),
             context,
             GameApp {
                 game,
@@ -197,6 +200,7 @@ pub fn run_game<T: Game>(app_info: AppInfo) {
             },
         ),
         Err(error) => run_gui_app(
+            T::window_attributes(),
             context,
             error::error_gui(error),
             &Image::load_asset(AssetPath("theme.png"))

@@ -6,7 +6,11 @@ use silica_gui::{
     theme::{StandardTheme, Theme},
 };
 use silica_wgpu::{Context, SurfaceSize, TextureConfig, wgpu};
-use winit::{error::EventLoopError, event_loop::ActiveEventLoop, window::Window};
+use winit::{
+    error::EventLoopError,
+    event_loop::ActiveEventLoop,
+    window::{Window, WindowAttributes},
+};
 
 use crate::{App, InputEvent, run_app};
 
@@ -69,10 +73,16 @@ impl App for GuiApp {
     }
 }
 
-pub fn run_gui_app(context: Context, gui: Gui, theme_data: &[u8]) -> Result<(), EventLoopError> {
+pub fn run_gui_app(
+    window_attributes: WindowAttributes,
+    context: Context,
+    gui: Gui,
+    theme_data: &[u8],
+) -> Result<(), EventLoopError> {
     let texture_config = TextureConfig::new(&context, wgpu::FilterMode::Linear);
     let theme = Rc::new(StandardTheme::new(&context, &texture_config, theme_data));
     run_app(
+        window_attributes,
         context,
         GuiApp {
             gui,

@@ -1,5 +1,5 @@
 use silica_game::{
-    EventLoop, Game, GameError, InputEvent, Rgba, app_info,
+    EventLoop, Game, GameError, InputEvent, Rgba, Window, WindowAttributes, app_info,
     render::{Context, SurfaceSize, wgpu},
     run_game,
 };
@@ -7,6 +7,9 @@ use silica_game::{
 struct ErrorGame;
 
 impl Game for ErrorGame {
+    fn window_attributes() -> WindowAttributes {
+        Window::default_attributes().with_title("Error Example")
+    }
     fn load(_context: &Context) -> Result<Self, GameError> {
         Err(GameError::from_string(
             "An error occurred while loading the game.".to_string(),
