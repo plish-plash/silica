@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, path::Path};
 
 pub use fluent_bundle::FluentArgs;
 use fluent_bundle::{FluentBundle, FluentMessage, FluentResource};
@@ -28,7 +28,8 @@ impl Localization {
         locale: LanguageIdentifier,
     ) -> Result<(LanguageIdentifier, FluentResource), GameError> {
         let path = format!("locale/{locale}.ftl");
-        if let Ok(source) = std::fs::read_to_string(&path) {
+        let asset_path = Path::new("assets").join(&path);
+        if let Ok(source) = std::fs::read_to_string(asset_path) {
             log::debug!("Loading translations from {path}");
             return Ok((locale, Self::create_resource(source)));
         }
@@ -38,7 +39,8 @@ impl Localization {
             Self::FALLBACK_LOCALE
         );
         let path = format!("locale/{}.ftl", Self::FALLBACK_LOCALE);
-        if let Ok(source) = std::fs::read_to_string(&path) {
+        let asset_path = Path::new("assets").join(&path);
+        if let Ok(source) = std::fs::read_to_string(asset_path) {
             log::debug!("Loading translations from {path}");
             return Ok((
                 Self::FALLBACK_LOCALE.parse().unwrap(),

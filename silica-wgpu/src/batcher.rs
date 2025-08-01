@@ -67,12 +67,12 @@ impl<T: Pod> Batcher<T> {
         self.buffer_data.push(instance);
         self.buffer_data_dirty = true;
     }
-    pub fn queue_buffer(&mut self, texture: &Texture, buffer: &ResizableBuffer<T>) {
+    pub fn queue_buffer(&mut self, texture: &Texture, buffer: &wgpu::Buffer, range: Range<u32>) {
         self.flush();
         self.draw_calls.push(DrawCall {
-            buffer: Some(buffer.buffer().clone()),
+            buffer: Some(buffer.clone()),
             texture: texture.bind_group().clone(),
-            range: 0..(buffer.len() as u32),
+            range,
         })
     }
     pub fn draw(

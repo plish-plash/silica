@@ -5,6 +5,22 @@ use glyphon::{Attrs, Buffer, Metrics, Shaping, TextArea, TextBounds, TextRendere
 
 use crate::{render::GuiRenderer, *};
 
+pub trait BufferExt {
+    fn text_size(&self) -> Size;
+}
+
+impl BufferExt for Buffer {
+    fn text_size(&self) -> Size {
+        let (width, total_lines) = self
+            .layout_runs()
+            .fold((0.0, 0usize), |(width, total_lines), run| {
+                (run.line_w.max(width), total_lines + 1)
+            });
+        let height = (total_lines as f32) * self.metrics().line_height;
+        Size::new(width.ceil() as i32, height.ceil() as i32)
+    }
+}
+
 #[derive(Default)]
 pub struct NodeBuilder {
     style: Style,
@@ -33,6 +49,10 @@ impl NodeBuilder {
     }
     pub fn child(mut self, child: impl Into<NodeId>) -> Self {
         self.children.push(child.into());
+        self
+    }
+    pub fn children(mut self, iter: impl IntoIterator<Item = NodeId>) -> Self {
+        self.children.extend(iter);
         self
     }
     pub fn build(self, gui: &mut Gui) -> NodeId {
@@ -104,7 +124,7 @@ impl<'a> LabelBuilder<'a> {
         self.align = Some(align);
         self
     }
-    pub fn build(self, gui: &Gui) -> Label {
+    pub fn build_label(self, gui: &Gui) -> Label {
         Label::new(
             gui.font_system(),
             Metrics::relative(self.font_size, self.line_height),
@@ -112,6 +132,10 @@ impl<'a> LabelBuilder<'a> {
             self.align,
             self.text,
         )
+    }
+    pub fn build(self, gui: &mut Gui, style: Style) -> WidgetId<Label> {
+        let label = self.build_label(gui);
+        gui.create_widget(style, label)
     }
 }
 
@@ -205,14 +229,7 @@ impl Widget for Label {
             width_constraint,
             height_constraint,
         );
-        let (width, total_lines) = self
-            .buffer
-            .layout_runs()
-            .fold((0.0, 0usize), |(width, total_lines), run| {
-                (run.line_w.max(width), total_lines + 1)
-            });
-        let height = (total_lines as f32) * self.buffer.metrics().line_height;
-        Size::new(width.ceil() as i32, height.ceil() as i32)
+        self.buffer.text_size()
     }
     fn layout(&mut self, area: &Area) {
         let size = area.content_rect.size.to_f32();
@@ -449,18 +466,17 @@ impl Button {
         }
     }
     fn create_label(gui: &mut Gui, text: &str) -> WidgetId<Label> {
-        let label = LabelBuilder::new(text)
+        LabelBuilder::new(text)
             .font_size(Self::LABEL_FONT_SIZE)
             .align(TextAlign::Center)
-            .build(gui);
-        gui.create_widget(
-            Style {
-                grow: true,
-                margin: SideOffsets::new(0, 4, 0, 4),
-                ..Default::default()
-            },
-            label,
-        )
+            .build(
+                gui,
+                Style {
+                    grow: true,
+                    margin: SideOffsets::new(0, 4, 0, 4),
+                    ..Default::default()
+                },
+            )
     }
 
     pub fn new<C, F>(button_style: ButtonStyle, on_clicked: F) -> Self

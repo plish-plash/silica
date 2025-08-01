@@ -47,7 +47,6 @@ impl Default for AdapterFeatures {
 }
 
 /// Context containing global wgpu resources.
-#[derive(Clone)]
 pub struct Context {
     pub instance: wgpu::Instance,
     pub adapter: wgpu::Adapter,

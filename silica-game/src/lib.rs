@@ -5,13 +5,22 @@ pub mod particles;
 pub mod util;
 pub mod world2d;
 
-use std::{path::Path, rc::Rc, sync::Arc, time::Instant};
+use std::{
+    path::{Path, PathBuf},
+    rc::Rc,
+    sync::Arc,
+    time::Instant,
+};
 
 pub use euclid as math;
 pub use silica_env::{AppInfo, app_info};
 pub use silica_gui as gui;
 pub use silica_gui::Rgba;
-use silica_gui::{FontSystem, glyphon::fontdb, render::GuiResources, theme::StandardTheme};
+use silica_gui::{
+    FontSystem,
+    glyphon::fontdb,
+    theme::{StandardTheme, Theme},
+};
 pub use silica_wgpu as render;
 use silica_wgpu::{AdapterFeatures, Context, SurfaceSize, TextureConfig, wgpu};
 pub use silica_window::{
@@ -28,15 +37,26 @@ pub struct LocalSpace;
 pub struct WorldSpace;
 pub struct ScreenSpace;
 
-pub fn load_asset<P, T, F>(path: P, f: F) -> Result<T, GameError>
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AssetPath(pub &'static str);
+
+impl AssetPath {
+    pub fn path(&self) -> PathBuf {
+        Path::new("assets").join(self.0)
+    }
+}
+impl std::fmt::Display for AssetPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+pub fn load_asset<T, F>(path: AssetPath, f: F) -> Result<T, GameError>
 where
-    P: AsRef<Path>,
     F: FnOnce(&Path) -> Result<T, GameError>,
 {
-    let path = path.as_ref();
-    let asset_path = Path::new("assets").join(path);
-    log::debug!("Loading asset {}", path.display());
-    f(&asset_path).map_err(|e| e.with_read(path.to_path_buf()))
+    log::debug!("Loading asset {path}");
+    load_file(path.path(), f)
 }
 pub fn load_file<P, T, F>(path: P, f: F) -> Result<T, GameError>
 where
@@ -57,13 +77,11 @@ where
     f(path).map_err(|e| e.with_write(path.to_path_buf()))
 }
 
-pub fn read_asset_directory<P, F>(path: P, mut f: F) -> Result<(), GameError>
+pub fn load_asset_directory<F>(path: AssetPath, mut f: F) -> Result<(), GameError>
 where
-    P: AsRef<Path>,
     F: FnMut(&Path) -> Result<(), GameError>,
 {
-    let path = path.as_ref();
-    let asset_path = Path::new("assets").join(path);
+    let asset_path = path.path();
     let mut entries: Vec<_> = std::fs::read_dir(&asset_path)
         .map_err(|e| GameError::from_string(e.to_string()).with_read(asset_path.clone()))?
         .filter_map(|res| {
@@ -73,31 +91,32 @@ where
         })
         .collect();
     entries.sort();
-    log::info!("Loading {} assets from {}", entries.len(), path.display());
+    log::info!("Loading {} assets from {}", entries.len(), path);
     for path in entries {
-        f(&path)?;
+        load_file(path, &mut f)?;
     }
     Ok(())
 }
 
 pub fn load_fonts() -> Result<FontSystem, GameError> {
     let mut db = fontdb::Database::new();
-    read_asset_directory("fonts", |path| {
-        db.load_font_source(load_file(path, |path| {
-            Ok(fontdb::Source::Binary(Arc::new(std::fs::read(path)?)))
-        })?);
+    load_asset_directory(AssetPath("fonts"), |path| {
+        db.load_font_source(fontdb::Source::Binary(Arc::new(std::fs::read(path)?)));
         Ok(())
     })?;
     Ok(FontSystem::new(silica_env::get_locale(), db))
 }
 
-pub fn load_gui_resources(
+pub fn load_gui_theme(
     context: &Context,
     texture_config: &TextureConfig,
-) -> Result<GuiResources, GameError> {
-    let image = load_asset("theme.png", |path| Image::load(path))?;
-    let theme = Rc::new(StandardTheme::new(context, texture_config, &image.data));
-    Ok(GuiResources::new(context, texture_config, theme))
+) -> Result<Rc<dyn Theme>, GameError> {
+    let image = Image::load_asset(AssetPath("theme.png"))?;
+    Ok(Rc::new(StandardTheme::new(
+        context,
+        texture_config,
+        &image.data,
+    )))
 }
 
 pub trait Game: Sized {
@@ -180,7 +199,9 @@ pub fn run_game<T: Game>(app_info: AppInfo) {
         Err(error) => run_gui_app(
             context,
             error::error_gui(error),
-            &Image::load("theme.png").unwrap_display().data,
+            &Image::load_asset(AssetPath("theme.png"))
+                .unwrap_display()
+                .data,
         ),
     }
     .unwrap_display()

@@ -43,6 +43,9 @@ where
     pub fn is_empty(&self) -> bool {
         self.particles.is_empty()
     }
+    pub fn particle_count(&self) -> usize {
+        self.particles.len()
+    }
     pub fn spawn(&mut self, particle: S::Particle) {
         self.particles.push(particle);
         self.changed = true;

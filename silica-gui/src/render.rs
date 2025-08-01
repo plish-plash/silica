@@ -122,7 +122,7 @@ impl QuadPipeline {
                     module: &shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(ColorTargetState {
-                        format: context.surface_format.unwrap(),
+                        format: context.surface_format.expect("surface not created"),
                         blend: Some(BlendState::ALPHA_BLENDING),
                         write_mask: ColorWrites::default(),
                     })],
@@ -175,7 +175,7 @@ impl TextResources {
             &context.device,
             &context.queue,
             &cache,
-            context.surface_format.unwrap(),
+            context.surface_format.expect("surface not created"),
             glyphon::ColorMode::Web,
         );
         let viewport = glyphon::Viewport::new(&context.device, &cache);

@@ -4,7 +4,7 @@ use etagere::BucketedAtlasAllocator;
 use png::*;
 use silica_wgpu::{Context, Texture, TextureConfig, TextureRect, TextureSize, Uv, UvRect, wgpu};
 
-use crate::{GameError, error::io_data_error, load_asset};
+use crate::{AssetPath, GameError, error::io_data_error, load_asset};
 
 pub type ImagePoint = euclid::Point2D<u32, Image>;
 pub type ImageSize = euclid::Size2D<u32, Image>;
@@ -17,36 +17,37 @@ pub struct Image {
 impl Image {
     pub const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, GameError> {
-        load_asset(path, |path| {
-            let file = File::open(path)?;
-            let mut decoder = Decoder::new(file);
-            decoder.set_transformations(Transformations::ALPHA);
-            let mut image_reader = decoder.read_info()?;
-            let mut data = vec![0; image_reader.output_buffer_size()];
-            let info = image_reader.next_frame(&mut data)?;
-            data.truncate(info.buffer_size());
-            assert_eq!(info.bit_depth, BitDepth::Eight);
-            match info.color_type {
-                ColorType::Rgba => {}
-                ColorType::GrayscaleAlpha => {
-                    data = data
-                        .chunks_exact(2)
-                        .flat_map(|x| [x[0], x[0], x[0], x[1]])
-                        .collect();
-                }
-                _ => {
-                    return Err(DecodingError::IoError(io_data_error(
-                        true,
-                        format!("unsupported color type {:?}", info.color_type),
-                    ))
-                    .into());
-                }
+        let file = File::open(path)?;
+        let mut decoder = Decoder::new(file);
+        decoder.set_transformations(Transformations::ALPHA);
+        let mut image_reader = decoder.read_info()?;
+        let mut data = vec![0; image_reader.output_buffer_size()];
+        let info = image_reader.next_frame(&mut data)?;
+        data.truncate(info.buffer_size());
+        assert_eq!(info.bit_depth, BitDepth::Eight);
+        match info.color_type {
+            ColorType::Rgba => {}
+            ColorType::GrayscaleAlpha => {
+                data = data
+                    .chunks_exact(2)
+                    .flat_map(|x| [x[0], x[0], x[0], x[1]])
+                    .collect();
             }
-            Ok(Image {
-                size: ImageSize::new(info.width, info.height),
-                data,
-            })
+            _ => {
+                return Err(DecodingError::IoError(io_data_error(
+                    true,
+                    format!("unsupported color type {:?}", info.color_type),
+                ))
+                .into());
+            }
+        }
+        Ok(Image {
+            size: ImageSize::new(info.width, info.height),
+            data,
         })
+    }
+    pub fn load_asset(path: AssetPath) -> Result<Self, GameError> {
+        load_asset(path, |path| Self::load(path))
     }
     pub fn create_texture(&self, context: &Context, config: &TextureConfig) -> Texture {
         Texture::new_with_data(

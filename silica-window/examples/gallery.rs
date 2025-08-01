@@ -2,12 +2,9 @@ use silica_gui::*;
 use silica_wgpu::{AdapterFeatures, Context};
 
 fn build_gui(gui: &mut Gui) -> NodeId {
-    let label = gui.create_widget(
-        Style::default(),
-        LabelBuilder::new("Hello, World!")
-            .font_size(24.0)
-            .build(gui),
-    );
+    let label = LabelBuilder::new("Hello, World!")
+        .font_size(24.0)
+        .build(gui, Style::default());
     NodeBuilder::new()
         .modify_style(|style| {
             style.direction = Direction::Column;

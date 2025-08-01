@@ -1,10 +1,10 @@
 use std::ops::Range;
 
 use bytemuck::{Pod, Zeroable};
-use euclid::{Box2D, vec2};
+use euclid::vec2;
 use silica_gui::Rgba;
 use silica_wgpu::{
-    BatcherPipeline, Context, Surface, SurfaceSize, TextureConfig, UvRect,
+    BatcherPipeline, Context, SurfaceSize, TextureConfig, UvRect,
     wgpu::{self, util::DeviceExt},
 };
 
@@ -31,18 +31,19 @@ impl Quad {
 
 #[derive(Clone)]
 pub struct Camera2D {
-    pub viewport: Option<Box2D<u32, Surface>>,
     pub center: Point,
-    pub bounds: Option<Rect>,
     pub scale: f32,
 }
 
 impl Camera2D {
-    pub fn transform(&self, size: SurfaceSize) -> CameraTransform {
-        let viewport_center = self
-            .viewport
+    pub fn transform(
+        &self,
+        size: SurfaceSize,
+        viewport: Option<euclid::Rect<u32, crate::ScreenSpace>>,
+    ) -> CameraTransform {
+        let viewport_center = viewport
             .map(|viewport| viewport.center())
-            .unwrap_or_else(|| (size / 2).to_vector().to_point())
+            .unwrap_or_else(|| (size / 2).to_vector().to_point().cast_unit())
             .to_f32();
         CameraTransform::translation(-self.center.x, -self.center.y)
             .then_scale(self.scale, self.scale)
@@ -52,9 +53,7 @@ impl Camera2D {
 impl Default for Camera2D {
     fn default() -> Self {
         Camera2D {
-            viewport: None,
             center: Point::zero(),
-            bounds: None,
             scale: 1.0,
         }
     }
@@ -139,7 +138,7 @@ impl Pipeline2D {
                 entry_point: Some("fs_main"),
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState {
-                    format: context.surface_format.unwrap(),
+                    format: context.surface_format.expect("surface not created"),
                     blend: Some(BlendState::ALPHA_BLENDING),
                     write_mask: ColorWrites::default(),
                 })],
@@ -161,10 +160,14 @@ impl Pipeline2D {
         }
     }
 
-    pub fn set_camera(&mut self, context: &Context, camera: &Camera2D, size: SurfaceSize) {
-        let view_matrix = camera.transform(size);
+    pub fn set_camera(
+        &mut self,
+        context: &Context,
+        camera_transform: CameraTransform,
+        size: SurfaceSize,
+    ) {
         let uniforms = Uniforms {
-            view_matrix,
+            view_matrix: camera_transform,
             screen_resolution: size.to_f32().to_array(),
         };
         context
@@ -188,90 +191,3 @@ impl BatcherPipeline for Pipeline2D {
         pass.draw(0..4, range);
     }
 }
-
-// pub struct Renderer2D {
-//     pipeline: Pipeline2D,
-//     surface_size: SurfaceSize,
-//     buffer: ResizableBuffer<Quad>,
-//     buffer_data: Vec<Quad>,
-//     draw_calls: Vec<DrawCall>,
-// }
-
-// impl Renderer2D {
-//     pub fn new(
-//         context: &Context,
-//         surface_format: wgpu::TextureFormat,
-//         texture_config: &TextureConfig,
-//     ) -> Self {
-//         let pipeline = Pipeline2D::new(context, surface_format, texture_config);
-//         Renderer2D {
-//             pipeline,
-//             surface_size: SurfaceSize::zero(),
-//             buffer: ResizableBuffer::new(context),
-//             buffer_data: Vec::new(),
-//             draw_calls: Vec::new(),
-//         }
-//     }
-//     pub fn surface_resize(&mut self, size: SurfaceSize) {
-//         self.surface_size = size;
-//     }
-//     pub fn render(
-//         &mut self,
-//         context: &Context,
-//         pass: &mut wgpu::RenderPass,
-//         camera: Camera2D,
-//         f: impl FnOnce(&mut DrawCallBuilder),
-//     ) {
-//         self.pipeline.set_camera(
-//             context,
-//             camera.transform(self.surface_size),
-//             self.surface_size,
-//         );
-//         {
-//             let mut renderer = DrawCallBuilder {
-//                 context,
-//                 buffer_data: &mut self.buffer_data,
-//                 draw_calls: &mut self.draw_calls,
-//                 current_texture: None,
-//                 last_index: 0,
-//             };
-//             f(&mut renderer);
-//         }
-//         self.buffer.set_data(context, &self.buffer_data);
-//         self.buffer_data.clear();
-
-//         self.pipeline.bind(pass);
-//         self.pipeline.bind_buffer(pass, &self.buffer);
-//         let mut viewport_set = false;
-//         let mut buffer_set = false;
-//         if let Some(viewport) = camera.viewport {
-//             let viewport = viewport.to_u32();
-//             pass.set_scissor_rect(
-//                 viewport.min.x,
-//                 viewport.min.y,
-//                 viewport.width(),
-//                 viewport.height(),
-//             );
-//             viewport_set = true;
-//         }
-//         for DrawCall {
-//             buffer,
-//             texture,
-//             range,
-//         } in self.draw_calls.drain(..)
-//         {
-//             if let Some(buffer) = buffer {
-//                 pass.set_vertex_buffer(0, buffer.slice(..));
-//                 buffer_set = true;
-//             } else if buffer_set {
-//                 self.pipeline.bind_buffer(pass, &self.buffer);
-//                 buffer_set = false;
-//             }
-//             pass.set_bind_group(1, &texture, &[]);
-//             self.pipeline.draw(pass, range);
-//         }
-//         if viewport_set {
-//             pass.set_scissor_rect(0, 0, self.surface_size.width, self.surface_size.height);
-//         }
-//     }
-// }

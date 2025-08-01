@@ -101,7 +101,7 @@ pub(crate) fn error_gui(error: GameError) -> Gui {
                     let label = LabelBuilder::new(&error)
                         .font_size(20.0)
                         .align(TextAlign::Center)
-                        .build(&gui);
+                        .build_label(&gui);
                     NodeBuilder::new()
                         .modify_style(|style| style.max_size.width = 480)
                         .build_widget(&mut gui, label)

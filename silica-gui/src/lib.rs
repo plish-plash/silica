@@ -239,6 +239,7 @@ pub type Node = silica_layout::Node<NodeId, Box<dyn Widget>>;
 pub struct Gui {
     font_system: FontSystem,
     nodes: SlotMap<NodeId, Node>,
+    parents: SecondaryMap<NodeId, NodeId>,
     children: SecondaryMap<NodeId, Vec<NodeId>>,
     root: NodeId,
     input: GuiInput,
@@ -256,6 +257,7 @@ impl Gui {
         Gui {
             font_system,
             nodes,
+            parents: SecondaryMap::new(),
             children: SecondaryMap::new(),
             root,
             input: GuiInput::default(),
@@ -278,6 +280,7 @@ impl Gui {
     }
     pub fn clear(&mut self) {
         self.nodes.clear();
+        self.parents.clear();
         self.children.clear();
         self.root = self.nodes.insert(Node::default());
         self.needs_layout = true;
@@ -316,42 +319,64 @@ impl Gui {
         self.nodes.insert(Node::new(style, None))
     }
     pub(crate) fn set_node_children(&mut self, node: impl Into<NodeId>, children: Vec<NodeId>) {
+        // assumes the node does not already have children
         if !children.is_empty() {
-            self.children.insert(node.into(), children);
+            let node = node.into();
+            for child in children.iter() {
+                self.parents.insert(*child, node);
+            }
+            self.children.insert(node, children);
             self.needs_layout = true;
         }
     }
-    fn delete(&mut self, node: impl Into<NodeId>) {
-        // node must not have a parent!
+    pub fn delete(&mut self, node: impl Into<NodeId>) {
         let node = node.into();
+        if let Some(parent) = self.parents.remove(node) {
+            self.remove_child(parent, node);
+        }
         self.delete_children(node);
         self.nodes.remove(node);
     }
     pub fn delete_children(&mut self, parent: impl Into<NodeId>) {
         if let Some(children) = self.children.remove(parent.into()) {
             for child in children {
-                self.delete(child);
+                self.delete_children(child);
+                self.parents.remove(child);
+                self.nodes.remove(child);
             }
             self.needs_layout = true;
         }
     }
     pub fn add_child(&mut self, parent: impl Into<NodeId>, child: impl Into<NodeId>) {
+        let parent = parent.into();
+        let child = child.into();
+        if let Some(prev_parent) = self.parents.insert(child, parent) {
+            self.remove_child(prev_parent, child);
+        }
         self.children
-            .entry(parent.into())
+            .entry(parent)
             .unwrap()
             .or_default()
-            .push(child.into());
+            .push(child);
         self.needs_layout = true;
     }
-    pub fn remove_child(&mut self, parent: impl Into<NodeId>, child: impl Into<NodeId>) -> bool {
-        let children = self.children.get_mut(parent.into()).unwrap();
-        let child = child.into();
-        children.retain(|c| *c != child);
-        self.needs_layout = true;
-        true
+    pub fn remove_child(&mut self, parent: impl Into<NodeId>, child: impl Into<NodeId>) {
+        if let Some(children) = self.children.get_mut(parent.into()) {
+            let child = child.into();
+            children.retain(|c| *c != child);
+            self.parents.remove(child);
+            self.needs_layout = true;
+        }
     }
     pub fn set_style(&mut self, node: impl Into<NodeId>, style: Style) {
         self.nodes.get_mut(node.into()).unwrap().style = style;
+        self.needs_layout = true;
+    }
+    pub fn modify_style<F>(&mut self, node: impl Into<NodeId>, f: F)
+    where
+        F: FnOnce(&mut Style),
+    {
+        f(&mut self.nodes.get_mut(node.into()).unwrap().style);
         self.needs_layout = true;
     }
     pub fn needs_layout(&self) -> bool {

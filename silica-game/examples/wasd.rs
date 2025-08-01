@@ -85,7 +85,8 @@ impl Game for WasdGame {
         let pipeline = self
             .pipeline
             .get_or_insert_with(|| Pipeline2D::new(context, &self.texture_config));
-        pipeline.set_camera(context, &Camera2D::default(), self.surface_size);
+        let camera = Camera2D::default().transform(self.surface_size, None);
+        pipeline.set_camera(context, camera, self.surface_size);
 
         self.batcher.clear();
         self.batcher.set_texture(&mut self.player_texture);
