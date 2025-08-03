@@ -343,9 +343,8 @@ impl<T: Pod> ResizableBuffer<T> {
         self.1 == 0
     }
     pub fn set_data(&mut self, context: &Context, data: &[T]) {
-        let capacity = self.0.capacity();
-        if data.len() > capacity {
-            self.0 = Buffer::new(context, capacity * 2);
+        if data.len() > self.0.capacity() {
+            self.0 = Buffer::new(context, data.len().next_power_of_two());
         }
         self.0.set_data(context, data);
         self.1 = data.len();
