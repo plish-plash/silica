@@ -96,7 +96,7 @@ impl Game for WasdGame {
         self.batcher.clear();
         self.batcher.set_texture(&mut self.player_texture);
         let size = self.player_texture.size().cast().cast_unit();
-        let mut rect = Rect::from_origin_and_size(self.player_point, size);
+        let mut rect = Rect::new(self.player_point, size);
         rect = rect.translate(-size.to_vector() / 2.0);
         self.batcher.queue(Quad {
             transform: Quad::rect_transform(rect),

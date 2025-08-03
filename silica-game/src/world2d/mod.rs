@@ -11,7 +11,7 @@ use silica_wgpu::{
 pub type Point = euclid::Point2D<f32, crate::WorldSpace>;
 pub type Vector = euclid::Vector2D<f32, crate::WorldSpace>;
 pub type Size = euclid::Size2D<f32, crate::WorldSpace>;
-pub type Rect = euclid::Box2D<f32, crate::WorldSpace>;
+pub type Rect = euclid::Rect<f32, crate::WorldSpace>;
 pub type Transform = euclid::Transform2D<f32, crate::LocalSpace, crate::WorldSpace>;
 pub type CameraTransform = euclid::Transform2D<f32, crate::WorldSpace, crate::ScreenSpace>;
 
@@ -25,7 +25,7 @@ pub struct Quad {
 
 impl Quad {
     pub fn rect_transform(rect: Rect) -> Transform {
-        Transform::scale(rect.width(), rect.height()).then_translate(rect.min.to_vector())
+        Transform::scale(rect.width(), rect.height()).then_translate(rect.origin.to_vector())
     }
 }
 
