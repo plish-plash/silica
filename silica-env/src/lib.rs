@@ -116,7 +116,7 @@ pub fn setup_env(app_info: AppInfo) {
 
 #[cfg(not(debug_assertions))]
 pub fn setup_env(app_info: AppInfo) {
-    setup_cwd_release();
+    setup_cwd();
     setup_panic_hook(app_info);
 }
 
