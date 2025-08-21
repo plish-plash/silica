@@ -70,6 +70,7 @@ fn build_gui(gui: &mut Gui) -> NodeId {
             for (index, label) in ["One", "Two", "Three", "Four"].into_iter().enumerate() {
                 ButtonBuilder::new()
                     .parent(buttons)
+                    .button_style(ButtonStyle::Tab)
                     .label(gui, label)
                     .hotkey(Hotkey::new(char::from_digit(index as u32 + 1, 10).unwrap()))
                     .toggled(index == 1)

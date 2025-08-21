@@ -471,6 +471,9 @@ impl Gui {
         grabbed_node: &mut Option<NodeId>,
         executor: &mut EventExecutor,
     ) {
+        if nodes.get(id).unwrap().area.hidden {
+            return;
+        }
         if let Some(node_children) = children.get(id) {
             for child in node_children.iter().rev() {
                 Self::dispatch_input_event(*child, nodes, children, input, grabbed_node, executor);
@@ -488,6 +491,8 @@ impl Gui {
                     *grabbed_node = Some(id);
                 }
             }
+        } else if node.style.background_color.is_some() && node.area.background_rect.contains(input.pointer) {
+            input.blocked = true;
         }
     }
     pub fn handle_input<K: KeyboardEvent, M: MouseButtonEvent>(
