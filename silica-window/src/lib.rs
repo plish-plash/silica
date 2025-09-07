@@ -7,12 +7,13 @@ use silica_wgpu::{Context, Surface, SurfaceSize, wgpu};
 use winit::{
     application::ApplicationHandler,
     error::EventLoopError,
-    event::{ElementState, MouseButton, WindowEvent},
+    event::{ElementState, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     keyboard::{KeyCode, ModifiersState, PhysicalKey, SmolStr},
     window::WindowId,
 };
 pub use winit::{
+    event::MouseButton,
     event_loop::ActiveEventLoop,
     keyboard,
     window::{Icon, Window, WindowAttributes},
@@ -51,6 +52,11 @@ impl silica_gui::KeyboardEvent for KeyboardEvent {
 
 pub struct MouseButtonEvent(MouseButton, ElementState);
 
+impl MouseButtonEvent {
+    pub fn button(&self) -> MouseButton {
+        self.0
+    }
+}
 impl silica_gui::MouseButtonEvent for MouseButtonEvent {
     fn is_primary_button(&self) -> bool {
         self.0 == MouseButton::Left

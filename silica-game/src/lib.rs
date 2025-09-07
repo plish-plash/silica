@@ -24,8 +24,8 @@ use silica_gui::{
 pub use silica_wgpu as render;
 use silica_wgpu::{AdapterFeatures, Context, SurfaceSize, TextureConfig, wgpu};
 pub use silica_window::{
-    ActiveEventLoop as EventLoop, Icon, InputEvent, KeyboardEvent, MouseButtonEvent, Window,
-    WindowAttributes, keyboard,
+    ActiveEventLoop as EventLoop, Icon, InputEvent, KeyboardEvent, MouseButton, MouseButtonEvent,
+    Window, WindowAttributes, keyboard,
 };
 use silica_window::{App, run_app, run_gui_app};
 

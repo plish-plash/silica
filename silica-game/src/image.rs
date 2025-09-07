@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path};
+use std::{fs::File, io::BufReader, path::Path};
 
 use etagere::BucketedAtlasAllocator;
 use png::*;
@@ -18,10 +18,10 @@ impl Image {
     pub const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, GameError> {
         let file = File::open(path)?;
-        let mut decoder = Decoder::new(file);
+        let mut decoder = Decoder::new(BufReader::new(file));
         decoder.set_transformations(Transformations::ALPHA);
         let mut image_reader = decoder.read_info()?;
-        let mut data = vec![0; image_reader.output_buffer_size()];
+        let mut data = vec![0; image_reader.output_buffer_size().unwrap()];
         let info = image_reader.next_frame(&mut data)?;
         data.truncate(info.buffer_size());
         assert_eq!(info.bit_depth, BitDepth::Eight);
