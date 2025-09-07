@@ -31,6 +31,7 @@ pub enum Layout {
     #[default]
     Box,
     Stack,
+    Grid(usize),
 }
 
 impl Layout {
@@ -45,6 +46,9 @@ impl Layout {
             Layout::None => Size::zero(),
             Layout::Box => BoxLayout::measure(nodes, children, id, available_space),
             Layout::Stack => StackLayout::measure(nodes, children, id, available_space),
+            Layout::Grid(columns) => {
+                GridLayout::measure(nodes, children, id, available_space, columns)
+            }
         }
     }
     fn layout<Id: Key, Widget: LayoutWidget>(
@@ -58,6 +62,7 @@ impl Layout {
             Layout::None => (),
             Layout::Box => BoxLayout::layout(nodes, children, id, rect),
             Layout::Stack => StackLayout::layout(nodes, children, id, rect),
+            Layout::Grid(columns) => GridLayout::layout(nodes, children, id, rect, columns),
         }
     }
 }

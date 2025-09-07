@@ -368,6 +368,9 @@ impl Gui {
             self.needs_layout = true;
         }
     }
+    pub fn get_style(&self, node: impl Into<NodeId>) -> &Style {
+        &self.nodes.get(node.into()).unwrap().style
+    }
     pub fn set_style(&mut self, node: impl Into<NodeId>, style: Style) {
         self.nodes.get_mut(node.into()).unwrap().style = style;
         self.needs_layout = true;
@@ -491,7 +494,9 @@ impl Gui {
                     *grabbed_node = Some(id);
                 }
             }
-        } else if node.style.background_color.is_some() && node.area.background_rect.contains(input.pointer) {
+        } else if node.style.background_color.is_some()
+            && node.area.background_rect.contains(input.pointer)
+        {
             input.blocked = true;
         }
     }

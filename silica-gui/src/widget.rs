@@ -486,10 +486,10 @@ impl Button {
     fn create_label(gui: &mut Gui, text: &str) -> WidgetId<Label> {
         LabelBuilder::new(text)
             .style(Style {
-                    grow: true,
-                    margin: SideOffsets::new(0, 4, 0, 4),
-                    ..Default::default()
-                })
+                grow: true,
+                margin: SideOffsets::new(0, 4, 0, 4),
+                ..Default::default()
+            })
             .font_size(Self::LABEL_FONT_SIZE)
             .align(TextAlign::Center)
             .build(gui)
