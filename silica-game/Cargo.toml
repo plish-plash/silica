@@ -16,4 +16,4 @@ euclid = { version = "0.22", features = ["bytemuck", "serde"] }
 png = "0.17"
 etagere = "0.2"
 unic-langid = "0.9"
-fluent-bundle = "0.15"
+fluent-bundle = "0.16"

@@ -75,6 +75,7 @@ impl NodeBuilder {
 
 #[must_use]
 pub struct LabelBuilder<'a> {
+    node: NodeBuilder,
     font_size: f32,
     line_height: f32,
     attrs: Attrs<'static>,
@@ -85,12 +86,28 @@ pub struct LabelBuilder<'a> {
 impl<'a> LabelBuilder<'a> {
     pub fn new(text: &'a str) -> Self {
         LabelBuilder {
+            node: NodeBuilder::new(),
             font_size: Label::DEFAULT_FONT_SIZE,
             line_height: 1.0,
             attrs: Attrs::new(),
             align: None,
             text,
         }
+    }
+    pub fn style(mut self, style: Style) -> Self {
+        self.node = self.node.style(style);
+        self
+    }
+    pub fn modify_style<F>(mut self, f: F) -> Self
+    where
+        F: FnOnce(&mut Style),
+    {
+        self.node = self.node.modify_style(f);
+        self
+    }
+    pub fn parent(mut self, parent: NodeId) -> Self {
+        self.node = self.node.parent(parent);
+        self
     }
     pub fn font_size(mut self, font_size: f32) -> Self {
         self.font_size = font_size;
@@ -133,9 +150,10 @@ impl<'a> LabelBuilder<'a> {
             self.text,
         )
     }
-    pub fn build(self, gui: &mut Gui, style: Style) -> WidgetId<Label> {
+    pub fn build(mut self, gui: &mut Gui) -> WidgetId<Label> {
+        let node = std::mem::take(&mut self.node);
         let label = self.build_label(gui);
-        gui.create_widget(style, label)
+        node.build_widget(gui, label)
     }
 }
 
@@ -467,16 +485,14 @@ impl Button {
     }
     fn create_label(gui: &mut Gui, text: &str) -> WidgetId<Label> {
         LabelBuilder::new(text)
-            .font_size(Self::LABEL_FONT_SIZE)
-            .align(TextAlign::Center)
-            .build(
-                gui,
-                Style {
+            .style(Style {
                     grow: true,
                     margin: SideOffsets::new(0, 4, 0, 4),
                     ..Default::default()
-                },
-            )
+                })
+            .font_size(Self::LABEL_FONT_SIZE)
+            .align(TextAlign::Center)
+            .build(gui)
     }
 
     pub fn new<C, F>(button_style: ButtonStyle, on_clicked: F) -> Self

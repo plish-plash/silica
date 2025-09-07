@@ -5,7 +5,7 @@ use silica_window::{Window, run_gui_app};
 fn build_gui(gui: &mut Gui) -> NodeId {
     let label = LabelBuilder::new("Hello, World!")
         .font_size(24.0)
-        .build(gui, Style::default());
+        .build(gui);
     NodeBuilder::new()
         .modify_style(|style| {
             style.direction = Direction::Column;
