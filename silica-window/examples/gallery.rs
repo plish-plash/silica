@@ -81,7 +81,7 @@ fn main() {
     run_gui_app(
         Window::default_attributes().with_title("Gallery Example"),
         context,
-        "theme/dark_theme",
+        "theme/light_theme",
         |theme| {
             let mut gui = Gui::new(theme);
             let root = build_gui(&mut gui);
