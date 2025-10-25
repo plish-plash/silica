@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="16"
+   height="16"
+   viewBox="0 0 16 16"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   sodipodi:docname="light_button.svg"
+   inkscape:export-filename="light_button.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="px"
+     showgrid="true"
+     inkscape:zoom="36.794118"
+     inkscape:cx="2.7585931"
+     inkscape:cy="8.4116706"
+     inkscape:window-width="2560"
+     inkscape:window-height="1511"
+     inkscape:window-x="-9"
+     inkscape:window-y="-9"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1">
+    <inkscape:grid
+       id="grid1"
+       units="px"
+       originx="0"
+       originy="0"
+       spacingx="1"
+       spacingy="1"
+       empcolor="#0099e5"
+       empopacity="0.30196078"
+       color="#0099e5"
+       opacity="0.14901961"
+       empspacing="8"
+       enabled="true"
+       visible="true" />
+  </sodipodi:namedview>
+  <defs
+     id="defs1">
+    <clipPath
+       clipPathUnits="userSpaceOnUse"
+       id="clipPath2">
+      <rect
+         style="fill:#ff0000;stroke-width:0.970142"
+         id="rect3"
+         width="16"
+         height="16"
+         x="0"
+         y="0"
+         ry="6" />
+    </clipPath>
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <rect
+       style="fill:#414141;fill-opacity:1;stroke-width:0.970142"
+       id="rect1-2"
+       width="16"
+       height="15"
+       x="0"
+       y="1"
+       ry="6" />
+    <rect
+       style="fill:#797979;fill-opacity:1;stroke-width:0.970142"
+       id="rect1"
+       width="16"
+       height="15"
+       x="0"
+       y="0"
+       ry="6" />
+    <rect
+       style="fill:#fffffe;fill-opacity:1"
+       id="rect2"
+       width="14"
+       height="13"
+       x="1"
+       y="1"
+       ry="5" />
+    <rect
+       style="fill:#cbcbcb;fill-opacity:1"
+       id="rect2-2"
+       width="14"
+       height="12"
+       x="1"
+       y="2"
+       ry="5" />
+  </g>
+</svg>

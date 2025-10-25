@@ -1,7 +1,8 @@
+use std::io::Error as IoError;
+
 use silica_game::{
-    EventLoop, Game, GameError, InputEvent, Rgba, Window, WindowAttributes, app_info,
     render::{Context, SurfaceSize, wgpu},
-    run_game,
+    *,
 };
 
 struct ErrorGame;
@@ -10,9 +11,10 @@ impl Game for ErrorGame {
     fn window_attributes() -> WindowAttributes {
         Window::default_attributes().with_title("Error Example")
     }
-    fn load(_context: &Context) -> Result<Self, GameError> {
-        Err(GameError::from_string(
-            "An error occurred while loading the game.".to_string(),
+    fn load(assets: GameAssets, _context: &Context) -> Result<Self, AssetError> {
+        Err(AssetError::new(
+            &assets,
+            IoError::other("An error occurred while loading the game."),
         ))
     }
     fn resize_window(&mut self, _context: &Context, _size: SurfaceSize) {}

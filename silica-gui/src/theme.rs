@@ -1,15 +1,16 @@
-use euclid::{SideOffsets2D, point2};
-use silica_wgpu::{
-    Context, Texture, TextureConfig, TextureRect, TextureSize, Uv, draw::*, wgpu::TextureFormat,
-};
+use euclid::{Box2D, SideOffsets2D};
+use serde::Deserialize;
+use silica_asset::{AssetError, AssetSource, serde_util::string_or_struct};
+use silica_wgpu::{Context, Texture, TextureConfig, TextureRect, TextureSize, draw::*, wgpu::TextureFormat};
 
 use crate::{
-    Color, Pixel, Rect, Rgba,
+    Color, FontSystem, Pixel, Rect, Rgba,
     render::{GuiRenderer, Quad},
     widget::{ButtonState, ButtonStyle},
 };
 
 pub trait Theme {
+    fn font_system(&self) -> &FontSystem;
     fn texture(&self) -> &Texture;
     fn color(&self, color: Color) -> Rgba;
     fn button_foreground_color(&self, state: ButtonState) -> Rgba;
@@ -24,99 +25,157 @@ pub trait Theme {
     );
 }
 
+#[derive(Deserialize)]
 struct StandardPalette {
+    #[serde(deserialize_with = "string_or_struct")]
     background_color: Rgba,
+    #[serde(deserialize_with = "string_or_struct")]
     border_color: Rgba,
+    #[serde(deserialize_with = "string_or_struct")]
     text_color: Rgba,
+    #[serde(deserialize_with = "string_or_struct")]
     accent_color: Rgba,
+    #[serde(deserialize_with = "string_or_struct")]
     accent_background_color: Rgba,
 }
 
-impl StandardPalette {
-    fn palette_color(texture_data: &[u8], slot: usize) -> Rgba {
-        let i = slot * 4 * StandardTheme::TEXTURE_SIZE.width as usize;
-        Rgba::from_u8(
-            texture_data[i],
-            texture_data[i + 1],
-            texture_data[i + 2],
-            texture_data[i + 3],
-        )
+#[derive(Deserialize)]
+struct NineSliceConfig {
+    rect: TextureRect,
+    insets: SideOffsets2D<u32, Texture>,
+}
+
+impl NineSliceConfig {
+    fn with_texture_size(self, size: TextureSize) -> NineSlice<Pixel> {
+        NineSlice::new(size, self.rect, self.insets)
     }
-    fn new(texture_data: &[u8]) -> Self {
-        StandardPalette {
-            background_color: Self::palette_color(texture_data, 1),
-            border_color: Self::palette_color(texture_data, 2),
-            text_color: Self::palette_color(texture_data, 3),
-            accent_color: Self::palette_color(texture_data, 4),
-            accent_background_color: Self::palette_color(texture_data, 5),
+}
+
+#[derive(Deserialize)]
+struct ButtonThemeConfig {
+    normal: NineSliceConfig,
+    hover: Option<NineSliceConfig>,
+    press: Option<NineSliceConfig>,
+    disable: Option<NineSliceConfig>,
+}
+
+impl ButtonThemeConfig {
+    fn with_texture_size(self, size: TextureSize) -> ButtonTheme {
+        ButtonTheme {
+            normal: self.normal.with_texture_size(size),
+            hover: self.hover.map(|ns| ns.with_texture_size(size)),
+            press: self.press.map(|ns| ns.with_texture_size(size)),
+            disable: self.disable.map(|ns| ns.with_texture_size(size)),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct StandardThemeConfig {
+    font: String,
+    texture: String,
+    palette: StandardPalette,
+    gutter: NineSliceConfig,
+    button: ButtonThemeConfig,
+    button_toggled: ButtonThemeConfig,
+    button_confirm: Option<ButtonThemeConfig>,
+    button_delete: Option<ButtonThemeConfig>,
+    tab: ButtonThemeConfig,
+    tab_active: NineSliceConfig,
+}
+
+#[derive(Clone)]
+struct ButtonTheme {
+    normal: NineSlice<Pixel>,
+    hover: Option<NineSlice<Pixel>>,
+    press: Option<NineSlice<Pixel>>,
+    disable: Option<NineSlice<Pixel>>,
+}
+
+impl ButtonTheme {
+    fn draw<F>(&self, renderer: &mut GuiRenderer, rect: Box2D<i32, Pixel>, state: ButtonState, state_color: F)
+    where
+        F: FnOnce(Rgba, ButtonState) -> Rgba,
+    {
+        let draw_with_fallback = |ns: Option<&NineSlice<Pixel>>| {
+            if let Some(ns) = ns {
+                ns.draw(renderer, rect, Rgba::WHITE);
+            } else {
+                self.normal.draw(renderer, rect, state_color(Rgba::WHITE, state));
+            }
+        };
+        match state {
+            ButtonState::Normal => self.normal.draw(renderer, rect, Rgba::WHITE),
+            ButtonState::Hover => draw_with_fallback(self.hover.as_ref()),
+            ButtonState::Press => draw_with_fallback(self.press.as_ref()),
+            ButtonState::Disable => draw_with_fallback(self.disable.as_ref()),
         }
     }
 }
 
 pub struct StandardTheme {
+    font_system: FontSystem,
     texture: Texture,
     palette: StandardPalette,
     gutter: NineSlice<Pixel>,
-    normal_button: NineSlice<Pixel>,
-    toggled_button: NineSlice<Pixel>,
-    confirm_button: NineSlice<Pixel>,
-    delete_button: NineSlice<Pixel>,
-    // dropdown_icon: TextureRect,
+    button: ButtonTheme,
+    button_toggled: ButtonTheme,
+    button_confirm: ButtonTheme,
+    button_delete: ButtonTheme,
+    tab: ButtonTheme,
+    tab_active: NineSlice<Pixel>,
 }
 
 impl StandardTheme {
-    pub const TEXTURE_SIZE: TextureSize = TextureSize::new(64, 32);
-    pub const DROPDOWN_ICON_RECT_SIZE: f32 = 32.0;
     fn state_color(color: Rgba, state: ButtonState) -> Rgba {
         match state {
             ButtonState::Normal => color,
-            ButtonState::Hover => color * 1.2,
+            ButtonState::Hover => color * 1.1,
             ButtonState::Press => color * 0.9,
             ButtonState::Disable => color.mul_alpha(0.5),
         }
     }
-    pub fn new(context: &Context, texture_config: &TextureConfig, texture_data: &[u8]) -> Self {
-        assert_eq!(texture_data.len(), Self::TEXTURE_SIZE.area() as usize * 4);
+    pub fn load<S: AssetSource>(
+        context: &Context,
+        texture_config: &TextureConfig,
+        asset_source: &mut S,
+    ) -> Result<Self, AssetError> {
+        let config: StandardThemeConfig = silica_asset::load_yaml(asset_source, "config.yaml")?;
+        let font_system = FontSystem::with_font_asset(asset_source, &config.font)?;
+        let image = silica_asset::load_image(asset_source, &config.texture)?;
         let texture = Texture::new_with_data(
             context,
             texture_config,
-            Self::TEXTURE_SIZE,
+            TextureSize::new(image.width, image.height),
             TextureFormat::Rgba8Unorm,
-            texture_data,
+            &image.data,
         );
-        StandardTheme {
+        let texture_size = texture.size();
+        let button = config.button.with_texture_size(texture_size);
+        Ok(StandardTheme {
+            font_system,
             texture,
-            palette: StandardPalette::new(texture_data),
-            gutter: NineSlice::new(
-                Self::TEXTURE_SIZE,
-                TextureRect::new(point2(16, 0), point2(32, 16)),
-                SideOffsets2D::new_all_same(7),
-            ),
-            normal_button: NineSlice::new(
-                Self::TEXTURE_SIZE,
-                TextureRect::new(point2(32, 0), point2(48, 16)),
-                SideOffsets2D::new_all_same(7),
-            ),
-            toggled_button: NineSlice::new(
-                Self::TEXTURE_SIZE,
-                TextureRect::new(point2(48, 0), point2(64, 16)),
-                SideOffsets2D::new_all_same(7),
-            ),
-            confirm_button: NineSlice::new(
-                Self::TEXTURE_SIZE,
-                TextureRect::new(point2(32, 16), point2(48, 32)),
-                SideOffsets2D::new_all_same(7),
-            ),
-            delete_button: NineSlice::new(
-                Self::TEXTURE_SIZE,
-                TextureRect::new(point2(48, 16), point2(64, 32)),
-                SideOffsets2D::new_all_same(7),
-            ),
-            // dropdown_icon: TextureRect::new(point2(2, 2), point2(14, 14)),
-        }
+            palette: config.palette,
+            gutter: config.gutter.with_texture_size(texture_size),
+            button: button.clone(),
+            button_toggled: config.button_toggled.with_texture_size(texture_size),
+            button_confirm: config
+                .button_confirm
+                .map(|button| button.with_texture_size(texture_size))
+                .unwrap_or(button.clone()),
+            button_delete: config
+                .button_delete
+                .map(|button| button.with_texture_size(texture_size))
+                .unwrap_or(button),
+            tab: config.tab.with_texture_size(texture_size),
+            tab_active: config.tab_active.with_texture_size(texture_size),
+        })
     }
 }
 impl Theme for StandardTheme {
+    fn font_system(&self) -> &FontSystem {
+        &self.font_system
+    }
     fn texture(&self) -> &Texture {
         &self.texture
     }
@@ -144,17 +203,16 @@ impl Theme for StandardTheme {
         state: ButtonState,
     ) {
         let rect = rect.to_box2d();
-        let color = Self::state_color(Rgba::WHITE, state);
         match style {
             ButtonStyle::Normal => {
                 if toggled {
-                    self.toggled_button.draw(renderer, rect, color);
+                    self.button_toggled.draw(renderer, rect, state, Self::state_color);
                 } else {
-                    self.normal_button.draw(renderer, rect, color);
+                    self.button.draw(renderer, rect, state, Self::state_color);
                 }
             }
-            ButtonStyle::Confirm => self.confirm_button.draw(renderer, rect, color),
-            ButtonStyle::Delete => self.delete_button.draw(renderer, rect, color),
+            ButtonStyle::Confirm => self.button_confirm.draw(renderer, rect, state, Self::state_color),
+            ButtonStyle::Delete => self.button_delete.draw(renderer, rect, state, Self::state_color),
             ButtonStyle::Flat => {
                 let color = if state == ButtonState::Hover || state == ButtonState::Press {
                     Self::state_color(self.palette.accent_background_color, state)
@@ -163,37 +221,17 @@ impl Theme for StandardTheme {
                 };
                 renderer.draw_theme_quad(Quad {
                     rect,
-                    uv: Uv::ZERO,
+                    uv: GuiRenderer::UV_WHITE,
                     color,
                 });
             }
             ButtonStyle::Tab => {
                 if toggled {
-                    self.toggled_button.draw_top(renderer, rect, color);
+                    self.tab_active.draw(renderer, rect, Rgba::WHITE);
                 } else {
-                    self.normal_button.draw_top(renderer, rect, color);
+                    self.tab.draw(renderer, rect, state, Self::state_color);
                 }
             }
         };
     }
-    // fn draw_dropdown(&self, renderer: &mut GuiRenderer, mut rect: Rect, state: ButtonState) ->
-    // Rect {     self.draw_button(batcher, rect, ButtonStyle::Normal, state);
-    //     rect.max.x -= Self::DROPDOWN_ICON_RECT_SIZE;
-    //     let icon_rect_min = point2(rect.max.x, rect.min.y);
-    //     batcher.queue_theme_quad(Quad {
-    //         rect: Box2D::new(icon_rect_min, point2(rect.max.x + 1.0, rect.max.y)),
-    //         uv: Uv::ZERO,
-    //         color: Self::state_color(self.palette.border_color, state),
-    //     });
-    //     let icon_size = self.dropdown_icon.size().to_f32().cast_unit();
-    //     let icon_point = icon_rect_min + (vec2(Self::DROPDOWN_ICON_RECT_SIZE, rect.height()) /
-    // 2.0)
-    //         - (icon_size / 2.0);
-    //     batcher.queue_theme_quad(Quad {
-    //         rect: Box2D::from_origin_and_size(icon_point, icon_size),
-    //         uv: Uv::normalize(self.dropdown_icon, Self::TEXTURE_SIZE),
-    //         color: Self::state_color(self.palette.text_color, state),
-    //     });
-    //     rect
-    // }
 }

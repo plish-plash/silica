@@ -11,11 +11,9 @@ pub trait BufferExt {
 
 impl BufferExt for Buffer {
     fn text_size(&self) -> Size {
-        let (width, total_lines) = self
-            .layout_runs()
-            .fold((0.0, 0usize), |(width, total_lines), run| {
-                (run.line_w.max(width), total_lines + 1)
-            });
+        let (width, total_lines) = self.layout_runs().fold((0.0, 0usize), |(width, total_lines), run| {
+            (run.line_w.max(width), total_lines + 1)
+        });
         let height = (total_lines as f32) * self.metrics().line_height;
         Size::new(width.ceil() as i32, height.ceil() as i32)
     }
@@ -242,20 +240,14 @@ impl Widget for Label {
         } else {
             Some(available_space.height as f32)
         };
-        self.buffer.set_size(
-            &mut self.font_system.borrow_mut(),
-            width_constraint,
-            height_constraint,
-        );
+        self.buffer
+            .set_size(&mut self.font_system.borrow_mut(), width_constraint, height_constraint);
         self.buffer.text_size()
     }
     fn layout(&mut self, area: &Area) {
         let size = area.content_rect.size.to_f32();
-        self.buffer.set_size(
-            &mut self.font_system.borrow_mut(),
-            Some(size.width),
-            Some(size.height),
-        );
+        self.buffer
+            .set_size(&mut self.font_system.borrow_mut(), Some(size.width), Some(size.height));
     }
     fn draw(&mut self, renderer: &mut GuiRenderer, area: &Area) {
         let point = area.content_rect.origin;
@@ -317,12 +309,7 @@ pub struct ButtonStateInput {
 }
 
 impl ButtonState {
-    pub fn handle_input(
-        &mut self,
-        input: &GuiInput,
-        hotkey: Option<Hotkey>,
-        rect: Rect,
-    ) -> ButtonStateInput {
+    pub fn handle_input(&mut self, input: &GuiInput, hotkey: Option<Hotkey>, rect: Rect) -> ButtonStateInput {
         let pointer_over = !input.blocked && rect.contains(input.pointer);
         let action = if pointer_over {
             InputAction::Block
@@ -536,18 +523,14 @@ impl Button {
         C: 'static,
         F: Fn(&mut C) + 'static,
     {
-        ButtonBuilder::new()
-            .label(gui, label)
-            .build(gui, on_clicked)
+        ButtonBuilder::new().label(gui, label).build(gui, on_clicked)
     }
     pub fn create_toggle<C, F>(gui: &mut Gui, label: &str, on_clicked: F) -> WidgetId<Self>
     where
         C: 'static,
         F: Fn(&mut C, bool) + 'static,
     {
-        ButtonBuilder::new()
-            .label(gui, label)
-            .build_toggle(gui, on_clicked)
+        ButtonBuilder::new().label(gui, label).build_toggle(gui, on_clicked)
     }
 
     pub fn enabled(&self) -> bool {
@@ -570,15 +553,8 @@ impl Button {
     }
 }
 impl Widget for Button {
-    fn input(
-        &mut self,
-        input: &GuiInput,
-        executor: &mut EventExecutor,
-        area: &Area,
-    ) -> InputAction {
-        let state_input = self
-            .state
-            .handle_input(input, self.hotkey, area.content_rect);
+    fn input(&mut self, input: &GuiInput, executor: &mut EventExecutor, area: &Area) -> InputAction {
+        let state_input = self.state.handle_input(input, self.hotkey, area.content_rect);
         if state_input.changed {
             executor.request_redraw();
         }
@@ -593,10 +569,7 @@ impl Widget for Button {
                     if !self.toggled || group.allow_deselect {
                         self.toggled = !self.toggled;
                         let param = if self.toggled {
-                            executor.queue(
-                                group.deselect_others.clone(),
-                                Some(Box::new((group.clone(), *index))),
-                            );
+                            executor.queue(group.deselect_others.clone(), Some(Box::new((group.clone(), *index))));
                             Some(*index)
                         } else {
                             None
@@ -609,20 +582,14 @@ impl Widget for Button {
         state_input.action
     }
     fn draw(&mut self, renderer: &mut GuiRenderer, area: &Area) {
-        renderer.theme().draw_button(
-            renderer,
-            area.content_rect,
-            self.button_style,
-            self.toggled,
-            self.state,
-        );
+        renderer
+            .theme()
+            .draw_button(renderer, area.content_rect, self.button_style, self.toggled, self.state);
     }
 }
 impl WidgetId<Button> {
     pub fn enabled(&self, gui: &Gui) -> bool {
-        gui.get_widget(*self)
-            .map(|button| button.enabled())
-            .unwrap_or(true)
+        gui.get_widget(*self).map(|button| button.enabled()).unwrap_or(true)
     }
     pub fn set_enabled(&self, gui: &mut Gui, enabled: bool) {
         if let Some(button) = gui.get_widget_mut(*self) {
@@ -630,9 +597,7 @@ impl WidgetId<Button> {
         }
     }
     pub fn toggled(&self, gui: &Gui) -> bool {
-        gui.get_widget(*self)
-            .map(|button| button.toggled())
-            .unwrap_or(false)
+        gui.get_widget(*self).map(|button| button.toggled()).unwrap_or(false)
     }
     pub fn set_toggled(&self, gui: &mut Gui, toggled: bool) {
         if let Some(button) = gui.get_widget_mut(*self) {
@@ -654,14 +619,13 @@ impl ExclusiveGroup {
         C: 'static,
         F: Fn(&mut C, Option<usize>) + 'static,
     {
-        let deselect_others =
-            EventFn::new_param(|gui, (group, index): (Rc<ExclusiveGroup>, usize)| {
-                for (other_index, other_button) in group.buttons.borrow().iter().enumerate() {
-                    if other_index != index {
-                        other_button.set_toggled(gui, false);
-                    }
+        let deselect_others = EventFn::new_param(|gui, (group, index): (Rc<ExclusiveGroup>, usize)| {
+            for (other_index, other_button) in group.buttons.borrow().iter().enumerate() {
+                if other_index != index {
+                    other_button.set_toggled(gui, false);
                 }
-            });
+            }
+        });
         Rc::new(ExclusiveGroup {
             allow_deselect,
             deselect_others,

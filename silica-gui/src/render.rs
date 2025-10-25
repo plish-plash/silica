@@ -1,14 +1,13 @@
 use std::{num::NonZeroU64, ops::Range, rc::Rc};
 
 use bytemuck::{Pod, Zeroable};
-use euclid::Box2D;
+use euclid::{Box2D, point2};
 use glyphon::TextRenderer;
 use silica_wgpu::{
-    BatcherPipeline, Context, ImmediateBatcher, SurfaceSize, Texture, TextureConfig, UvRect,
-    draw::DrawQuad, wgpu,
+    BatcherPipeline, Context, ImmediateBatcher, SurfaceSize, Texture, TextureConfig, UvRect, draw::DrawQuad, wgpu,
 };
 
-use crate::{Color, FontSystem, Pixel, Rgba, theme::Theme};
+use crate::{FontSystem, Pixel, Rgba, theme::Theme};
 
 #[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -84,59 +83,53 @@ impl QuadPipeline {
             step_mode: VertexStepMode::Instance,
             attributes: &vertex_attr_array![0 => Sint32x4, 1 => Float32x4, 2 => Float32x4],
         };
-        let uniforms_layout = context
-            .device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("silica uniforms bind group layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::VERTEX,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: NonZeroU64::new(std::mem::size_of::<Params>() as u64),
-                    },
-                    count: None,
-                }],
-            });
-        let pipeline_layout = context
-            .device
-            .create_pipeline_layout(&PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[&uniforms_layout, texture_config.bind_group_layout()],
-                push_constant_ranges: &[],
-            });
+        let uniforms_layout = context.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("silica uniforms bind group layout"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(std::mem::size_of::<Params>() as u64),
+                },
+                count: None,
+            }],
+        });
+        let pipeline_layout = context.device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[&uniforms_layout, texture_config.bind_group_layout()],
+            push_constant_ranges: &[],
+        });
 
-        let pipeline = context
-            .device
-            .create_render_pipeline(&RenderPipelineDescriptor {
-                label: Some("silica pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[vertex_buffer_layout],
-                    compilation_options: PipelineCompilationOptions::default(),
-                },
-                fragment: Some(FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(ColorTargetState {
-                        format: context.surface_format.expect("surface not created"),
-                        blend: Some(BlendState::ALPHA_BLENDING),
-                        write_mask: ColorWrites::default(),
-                    })],
-                    compilation_options: PipelineCompilationOptions::default(),
-                }),
-                primitive: PrimitiveState {
-                    topology: PrimitiveTopology::TriangleStrip,
-                    ..Default::default()
-                },
-                depth_stencil: None,
-                multisample: MultisampleState::default(),
-                multiview: None,
-                cache: None,
-            });
+        let pipeline = context.device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("silica pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[vertex_buffer_layout],
+                compilation_options: PipelineCompilationOptions::default(),
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(ColorTargetState {
+                    format: context.surface_format.expect("surface not created"),
+                    blend: Some(BlendState::ALPHA_BLENDING),
+                    write_mask: ColorWrites::default(),
+                })],
+                compilation_options: PipelineCompilationOptions::default(),
+            }),
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
         let viewport = Viewport::new(&context.device, &uniforms_layout);
 
         QuadPipeline { pipeline, viewport }
@@ -199,26 +192,21 @@ impl TextResources {
 pub struct GuiResources {
     quad_pipeline: QuadPipeline,
     text_resources: TextResources,
-    theme: Rc<dyn Theme>,
 }
 
 impl GuiResources {
-    pub fn new(context: &Context, texture_config: &TextureConfig, theme: Rc<dyn Theme>) -> Self {
+    pub fn new(context: &Context, texture_config: &TextureConfig) -> Self {
         let quad_pipeline = QuadPipeline::new(context, texture_config);
         let text_resources = TextResources::new(context);
         GuiResources {
             quad_pipeline,
             text_resources,
-            theme,
         }
     }
 
     pub fn surface_resize(&mut self, context: &Context, size: SurfaceSize) {
         self.quad_pipeline.surface_resize(context, size);
         self.text_resources.surface_resize(context, size);
-    }
-    pub fn background_color(&self) -> Rgba {
-        self.theme.color(Color::Background)
     }
 
     pub fn text_resources(&mut self) -> &mut TextResources {
@@ -227,6 +215,7 @@ impl GuiResources {
 }
 
 pub struct GuiRenderer<'a, 'b> {
+    pub(crate) theme: Rc<dyn Theme>,
     pub(crate) resources: &'a mut GuiResources,
     pub(crate) batcher: ImmediateBatcher<Quad>,
     pub(crate) context: &'a Context,
@@ -234,19 +223,17 @@ pub struct GuiRenderer<'a, 'b> {
 }
 
 impl GuiRenderer<'_, '_> {
+    pub const UV_WHITE: UvRect = UvRect::new(point2(-2.0, 0.0), point2(-2.0, 0.0));
     pub(crate) fn finish(&mut self) {
         self.batcher.draw(self.pass, &self.resources.quad_pipeline);
         self.batcher.finish(self.context);
     }
     pub fn theme(&self) -> Rc<dyn Theme> {
-        self.resources.theme.clone()
+        self.theme.clone()
     }
     pub fn draw_theme_quad(&mut self, quad: Quad) {
-        self.batcher.set_texture(
-            self.pass,
-            &self.resources.quad_pipeline,
-            self.resources.theme.texture(),
-        );
+        self.batcher
+            .set_texture(self.pass, &self.resources.quad_pipeline, self.theme.texture());
         self.batcher
             .queue(self.context, self.pass, &self.resources.quad_pipeline, quad);
     }

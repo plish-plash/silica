@@ -10,12 +10,14 @@ use std::{
 };
 
 pub use glyphon;
+use silica_asset::{AssetError, AssetSource};
 pub use silica_color::Rgba;
 pub use silica_layout::*;
-use silica_wgpu::{Context, ImmediateBatcher, UvRect, draw::draw_border, wgpu};
+use silica_wgpu::{Context, ImmediateBatcher, draw::draw_border, wgpu};
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
-pub use crate::widget::*;
+use crate::render::GuiRenderer;
+pub use crate::{theme::Theme, widget::*};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Hotkey {
@@ -165,15 +167,24 @@ impl EventExecutor {
 pub struct FontSystem(Rc<RefCell<glyphon::FontSystem>>);
 
 impl FontSystem {
-    pub fn new(locale: String, db: glyphon::fontdb::Database) -> Self {
-        FontSystem(Rc::new(RefCell::new(
-            glyphon::FontSystem::new_with_locale_and_db(locale, db),
-        )))
+    pub fn get_system_locale() -> String {
+        sys_locale::get_locale().unwrap_or_else(|| {
+            log::warn!("failed to get system locale, falling back to en-US");
+            "en-US".to_string()
+        })
     }
-    pub fn with_system_fonts() -> Self {
-        FontSystem(Rc::new(RefCell::new(glyphon::FontSystem::new())))
+    pub fn new(db: glyphon::fontdb::Database) -> Self {
+        FontSystem(Rc::new(RefCell::new(glyphon::FontSystem::new_with_locale_and_db(
+            Self::get_system_locale(),
+            db,
+        ))))
     }
-    pub fn borrow_mut(&self) -> std::cell::RefMut<glyphon::FontSystem> {
+    pub fn with_font_asset<S: AssetSource>(asset_source: &mut S, path: &str) -> Result<Self, AssetError> {
+        let mut db = glyphon::fontdb::Database::new();
+        db.load_font_data(silica_asset::load_bytes(asset_source, path)?);
+        Ok(Self::new(db))
+    }
+    pub fn borrow_mut(&self) -> std::cell::RefMut<'_, glyphon::FontSystem> {
         self.0.borrow_mut()
     }
 }
@@ -189,15 +200,10 @@ pub trait Widget: Upcast + 'static {
         Size::zero()
     }
     fn layout(&mut self, area: &Area) {}
-    fn input(
-        &mut self,
-        input: &GuiInput,
-        executor: &mut EventExecutor,
-        area: &Area,
-    ) -> InputAction {
+    fn input(&mut self, input: &GuiInput, executor: &mut EventExecutor, area: &Area) -> InputAction {
         InputAction::Pass
     }
-    fn draw(&mut self, renderer: &mut render::GuiRenderer, area: &Area);
+    fn draw(&mut self, renderer: &mut GuiRenderer, area: &Area);
 }
 
 impl<T: Widget> Upcast for T {
@@ -237,7 +243,7 @@ impl<T> From<WidgetId<T>> for NodeId {
 pub type Node = silica_layout::Node<NodeId, Box<dyn Widget>>;
 
 pub struct Gui {
-    font_system: FontSystem,
+    theme: Rc<dyn Theme>,
     nodes: SlotMap<NodeId, Node>,
     parents: SecondaryMap<NodeId, NodeId>,
     children: SecondaryMap<NodeId, Vec<NodeId>>,
@@ -251,11 +257,11 @@ pub struct Gui {
 }
 
 impl Gui {
-    pub fn new(font_system: FontSystem) -> Self {
+    pub fn new(theme: Rc<dyn Theme>) -> Self {
         let mut nodes = SlotMap::with_key();
         let root = nodes.insert(Node::default());
         Gui {
-            font_system,
+            theme,
             nodes,
             parents: SecondaryMap::new(),
             children: SecondaryMap::new(),
@@ -269,7 +275,10 @@ impl Gui {
         }
     }
     pub fn font_system(&self) -> &FontSystem {
-        &self.font_system
+        self.theme.font_system()
+    }
+    pub fn background_color(&self) -> Rgba {
+        self.theme.color(Color::Background)
     }
     pub fn root(&self) -> NodeId {
         self.root
@@ -289,30 +298,17 @@ impl Gui {
         self.nodes
             .get(id.into())
             .and_then(|node| node.widget.as_ref())
-            .map(|widget| {
-                widget
-                    .as_any()
-                    .downcast_ref()
-                    .expect("WidgetId has incorrect type")
-            })
+            .map(|widget| widget.as_any().downcast_ref().expect("WidgetId has incorrect type"))
     }
     pub fn get_widget_mut<W: Widget>(&mut self, id: WidgetId<W>) -> Option<&mut W> {
         self.nodes
             .get_mut(id.into())
             .and_then(|node| node.widget.as_mut())
-            .map(|widget| {
-                widget
-                    .as_any_mut()
-                    .downcast_mut()
-                    .expect("WidgetId has incorrect type")
-            })
+            .map(|widget| widget.as_any_mut().downcast_mut().expect("WidgetId has incorrect type"))
     }
     #[must_use]
     pub fn create_widget<W: Widget>(&mut self, style: Style, widget: W) -> WidgetId<W> {
-        WidgetId(
-            self.nodes.insert(Node::new(style, Some(Box::new(widget)))),
-            PhantomData,
-        )
+        WidgetId(self.nodes.insert(Node::new(style, Some(Box::new(widget)))), PhantomData)
     }
     #[must_use]
     pub fn create_node(&mut self, style: Style) -> NodeId {
@@ -353,11 +349,7 @@ impl Gui {
         if let Some(prev_parent) = self.parents.insert(child, parent) {
             self.remove_child(prev_parent, child);
         }
-        self.children
-            .entry(parent)
-            .unwrap()
-            .or_default()
-            .push(child);
+        self.children.entry(parent).unwrap().or_default().push(child);
         self.needs_layout = true;
     }
     pub fn remove_child(&mut self, parent: impl Into<NodeId>, child: impl Into<NodeId>) {
@@ -412,7 +404,7 @@ impl Gui {
         id: NodeId,
         nodes: &mut SlotMap<NodeId, Node>,
         children: &SecondaryMap<NodeId, Vec<NodeId>>,
-        renderer: &mut render::GuiRenderer,
+        renderer: &mut GuiRenderer,
     ) {
         let node = nodes.get_mut(id).unwrap();
         if node.area.hidden {
@@ -422,7 +414,7 @@ impl Gui {
             let color = renderer.theme().color(background_color);
             renderer.draw_theme_quad(render::Quad {
                 rect: node.area.background_rect.to_box2d(),
-                uv: UvRect::zero(),
+                uv: GuiRenderer::UV_WHITE,
                 color,
             });
         }
@@ -432,6 +424,7 @@ impl Gui {
                 renderer,
                 node.area.background_rect.to_box2d(),
                 node.style.border,
+                GuiRenderer::UV_WHITE,
                 color,
             );
         }
@@ -444,18 +437,11 @@ impl Gui {
             }
         }
     }
-    pub fn render(
-        &mut self,
-        context: &Context,
-        pass: &mut wgpu::RenderPass,
-        resources: &mut render::GuiResources,
-    ) {
+    pub fn render(&mut self, context: &Context, pass: &mut wgpu::RenderPass, resources: &mut render::GuiResources) {
         self.layout();
-        let batcher = self
-            .batcher
-            .take()
-            .unwrap_or_else(|| ImmediateBatcher::new(context));
-        let mut renderer = render::GuiRenderer {
+        let batcher = self.batcher.take().unwrap_or_else(|| ImmediateBatcher::new(context));
+        let mut renderer = GuiRenderer {
+            theme: self.theme.clone(),
             resources,
             batcher,
             context,
@@ -494,9 +480,7 @@ impl Gui {
                     *grabbed_node = Some(id);
                 }
             }
-        } else if node.style.background_color.is_some()
-            && node.area.background_rect.contains(input.pointer)
-        {
+        } else if node.style.background_color.is_some() && node.area.background_rect.contains(input.pointer) {
             input.blocked = true;
         }
     }
@@ -526,11 +510,7 @@ impl Gui {
                 &mut executor,
             );
         }
-        let unhandled_event = if self.input.blocked {
-            None
-        } else {
-            Some(event)
-        };
+        let unhandled_event = if self.input.blocked { None } else { Some(event) };
         self.input.reset();
         (executor, unhandled_event)
     }

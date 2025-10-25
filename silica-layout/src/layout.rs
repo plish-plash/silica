@@ -130,18 +130,12 @@ impl StackLayout {
             for child_id in child_ids.iter() {
                 let child = &nodes[*child_id];
                 let child_size = child.area.measured_size;
-                let grow_align = if child.style.grow {
-                    Align::Stretch
-                } else {
-                    main_align
-                };
-                let mut child_rect =
-                    grow_align.align_area(direction.horizontal(), rect, child_size);
-                child_rect = child.style.cross_align.align_area(
-                    !direction.horizontal(),
-                    child_rect,
-                    child_size,
-                );
+                let grow_align = if child.style.grow { Align::Stretch } else { main_align };
+                let mut child_rect = grow_align.align_area(direction.horizontal(), rect, child_size);
+                child_rect = child
+                    .style
+                    .cross_align
+                    .align_area(!direction.horizontal(), child_rect, child_size);
                 layout(nodes, children, *child_id, child_rect);
             }
         }
@@ -170,8 +164,7 @@ impl GridLayout {
         for column in 0..columns {
             let mut child_size = Size::zero();
             for i in (column..child_ids.len()).step_by(columns) {
-                child_size =
-                    child_size.max(measure(nodes, children, child_ids[i], available_space));
+                child_size = child_size.max(measure(nodes, children, child_ids[i], available_space));
             }
             for i in (column..child_ids.len()).step_by(columns) {
                 nodes[child_ids[i]].area.measured_size = child_size;

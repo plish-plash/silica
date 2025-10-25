@@ -13,30 +13,27 @@ pub struct TextureConfig {
 impl TextureConfig {
     pub fn new(context: &Context, filter: wgpu::FilterMode) -> Self {
         use wgpu::*;
-        let bind_group_layout =
-            context
-                .device
-                .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                    label: Some("silica texture bind group layout"),
-                    entries: &[
-                        BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
-                            ty: BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: TextureViewDimension::D2,
-                                sample_type: TextureSampleType::Float { filterable: true },
-                            },
-                            count: None,
-                        },
-                        BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: ShaderStages::FRAGMENT,
-                            ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                    ],
-                });
+        let bind_group_layout = context.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("silica texture bind group layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
         let sampler = context.device.create_sampler(&SamplerDescriptor {
             label: Some("silica texture sampler"),
             mag_filter: filter,
@@ -68,11 +65,7 @@ impl Texture {
             depth_or_array_layers: 1,
         }
     }
-    fn create_texture(
-        device: &wgpu::Device,
-        size: TextureSize,
-        format: wgpu::TextureFormat,
-    ) -> wgpu::Texture {
+    fn create_texture(device: &wgpu::Device, size: TextureSize, format: wgpu::TextureFormat) -> wgpu::Texture {
         device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: Self::convert_size(size),
@@ -107,41 +100,27 @@ impl Texture {
             data,
         )
     }
-    fn create_bind_group(
-        context: &Context,
-        config: &TextureConfig,
-        texture: &wgpu::Texture,
-    ) -> wgpu::BindGroup {
+    fn create_bind_group(context: &Context, config: &TextureConfig, texture: &wgpu::Texture) -> wgpu::BindGroup {
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        context
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &config.bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&config.sampler),
-                    },
-                ],
-            })
+        context.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &config.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&config.sampler),
+                },
+            ],
+        })
     }
-    pub fn new(
-        context: &Context,
-        config: &TextureConfig,
-        size: TextureSize,
-        format: wgpu::TextureFormat,
-    ) -> Self {
+    pub fn new(context: &Context, config: &TextureConfig, size: TextureSize, format: wgpu::TextureFormat) -> Self {
         let texture = Self::create_texture(&context.device, size, format);
         let bind_group = Self::create_bind_group(context, config, &texture);
-        Texture {
-            texture,
-            bind_group,
-        }
+        Texture { texture, bind_group }
     }
     pub fn new_with_data(
         context: &Context,
@@ -150,13 +129,9 @@ impl Texture {
         format: wgpu::TextureFormat,
         data: &[u8],
     ) -> Self {
-        let texture =
-            Self::create_texture_with_data(&context.device, &context.queue, size, format, data);
+        let texture = Self::create_texture_with_data(&context.device, &context.queue, size, format, data);
         let bind_group = Self::create_bind_group(context, config, &texture);
-        Texture {
-            texture,
-            bind_group,
-        }
+        Texture { texture, bind_group }
     }
     pub fn width(&self) -> u32 {
         self.texture.width()
@@ -170,14 +145,7 @@ impl Texture {
     pub fn format(&self) -> wgpu::TextureFormat {
         self.texture.format()
     }
-    pub fn write_data(
-        &self,
-        context: &Context,
-        rect: TextureRect,
-        data: &[u8],
-        offset: u64,
-        stride: u32,
-    ) {
+    pub fn write_data(&self, context: &Context, rect: TextureRect, data: &[u8], offset: u64, stride: u32) {
         let mut texture_copy_info = self.texture.as_image_copy();
         texture_copy_info.origin = wgpu::Origin3d {
             x: rect.min.x,

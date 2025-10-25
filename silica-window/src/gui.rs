@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use silica_asset::DirectorySource;
 use silica_gui::{
     Gui, Point, Rect,
     render::GuiResources,
@@ -17,18 +18,16 @@ use crate::{App, InputEvent, run_app};
 struct GuiApp {
     gui: Gui,
     texture_config: TextureConfig,
-    theme: Rc<dyn Theme>,
     resources: Option<GuiResources>,
 }
 
 impl App for GuiApp {
     const RUN_CONTINUOUSLY: bool = false;
     fn resize_window(&mut self, context: &Context, size: SurfaceSize) {
-        self.gui
-            .set_area(Rect::new(Point::origin(), size.to_i32().cast_unit()));
-        let resources = self.resources.get_or_insert_with(|| {
-            GuiResources::new(context, &self.texture_config, self.theme.clone())
-        });
+        self.gui.set_area(Rect::new(Point::origin(), size.to_i32().cast_unit()));
+        let resources = self
+            .resources
+            .get_or_insert_with(|| GuiResources::new(context, &self.texture_config));
         resources.surface_resize(context, size);
     }
     fn input(&mut self, event_loop: &ActiveEventLoop, window: &Window, event: InputEvent) {
@@ -49,7 +48,7 @@ impl App for GuiApp {
         encoder: &mut wgpu::CommandEncoder,
     ) {
         let resources = self.resources.as_mut().unwrap();
-        let background_color = resources.background_color();
+        let background_color = self.gui.background_color();
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -73,21 +72,27 @@ impl App for GuiApp {
     }
 }
 
-pub fn run_gui_app(
+pub fn run_gui_app<F>(
     window_attributes: WindowAttributes,
     context: Context,
-    gui: Gui,
-    theme_data: &[u8],
-) -> Result<(), EventLoopError> {
+    theme: &str,
+    f: F,
+) -> Result<(), EventLoopError>
+where
+    F: FnOnce(Rc<dyn Theme>) -> Gui,
+{
     let texture_config = TextureConfig::new(&context, wgpu::FilterMode::Linear);
-    let theme = Rc::new(StandardTheme::new(&context, &texture_config, theme_data));
+    let theme = match StandardTheme::load(&context, &texture_config, &mut DirectorySource::new(theme.into())) {
+        Ok(theme) => theme,
+        Err(error) => panic!("{}", error),
+    };
+    let gui = f(Rc::new(theme));
     run_app(
         window_attributes,
         context,
         GuiApp {
             gui,
             texture_config,
-            theme,
             resources: None,
         },
     )

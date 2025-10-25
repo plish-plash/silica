@@ -43,17 +43,8 @@ fn panic_hook(panic_info: &PanicHookInfo) {
                 writeln!(output, "{panic_info}")
             } else {
                 let mut output = File::create(CRASH_LOG_FILE)?;
-                writeln!(
-                    output,
-                    "{} v{}",
-                    app_info.package_name, app_info.package_version
-                )?;
-                writeln!(
-                    output,
-                    "Running on {} {}",
-                    std::env::consts::OS,
-                    std::env::consts::ARCH
-                )?;
+                writeln!(output, "{} v{}", app_info.package_name, app_info.package_version)?;
+                writeln!(output, "Running on {} {}", std::env::consts::OS, std::env::consts::ARCH)?;
                 writeln!(output)?;
                 writeln!(output, "{panic_info}")
             }
@@ -82,11 +73,7 @@ pub fn setup_logger(app_info: &AppInfo) {
         .init();
 
     log::info!("{} v{}", app_info.package_name, app_info.package_version);
-    log::info!(
-        "Running on {} {}",
-        std::env::consts::OS,
-        std::env::consts::ARCH
-    );
+    log::info!("Running on {} {}", std::env::consts::OS, std::env::consts::ARCH);
 }
 
 /// Sets the current directory to the executable's location.
@@ -118,11 +105,4 @@ pub fn setup_env(app_info: AppInfo) {
 pub fn setup_env(app_info: AppInfo) {
     setup_cwd();
     setup_panic_hook(app_info);
-}
-
-pub fn get_locale() -> String {
-    sys_locale::get_locale().unwrap_or_else(|| {
-        log::warn!("failed to get system locale, falling back to en-US");
-        "en-US".to_string()
-    })
 }

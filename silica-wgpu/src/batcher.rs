@@ -38,15 +38,15 @@ impl<T: Pod> Batcher<T> {
         }
     }
     fn flush(&mut self) {
-        if let Some(texture) = self.current_texture.clone() {
-            if self.last_index < self.buffer_data.len() {
-                self.draw_calls.push(DrawCall {
-                    buffer: None,
-                    texture,
-                    range: (self.last_index as u32)..(self.buffer_data.len() as u32),
-                });
-                self.last_index = self.buffer_data.len();
-            }
+        if let Some(texture) = self.current_texture.clone()
+            && self.last_index < self.buffer_data.len()
+        {
+            self.draw_calls.push(DrawCall {
+                buffer: None,
+                texture,
+                range: (self.last_index as u32)..(self.buffer_data.len() as u32),
+            });
+            self.last_index = self.buffer_data.len();
         }
     }
     pub fn clear(&mut self) {
@@ -75,12 +75,7 @@ impl<T: Pod> Batcher<T> {
             range,
         })
     }
-    pub fn draw(
-        &mut self,
-        context: &Context,
-        pass: &mut wgpu::RenderPass,
-        pipeline: &impl BatcherPipeline,
-    ) {
+    pub fn draw(&mut self, context: &Context, pass: &mut wgpu::RenderPass, pipeline: &impl BatcherPipeline) {
         self.flush();
         if self.buffer_data_dirty {
             self.buffer.set_data(context, &self.buffer_data);
@@ -88,12 +83,7 @@ impl<T: Pod> Batcher<T> {
         }
         pipeline.bind(pass);
         let mut reset_buffer = true;
-        for DrawCall {
-            buffer,
-            texture,
-            range,
-        } in self.draw_calls.iter()
-        {
+        for DrawCall { buffer, texture, range } in self.draw_calls.iter() {
             if let Some(buffer) = buffer {
                 pipeline.set_buffer(pass, buffer);
                 reset_buffer = true;
@@ -123,12 +113,7 @@ impl<T: Pod> ImmediateBatcher<T> {
             current_texture: None,
         }
     }
-    pub fn set_texture(
-        &mut self,
-        pass: &mut wgpu::RenderPass,
-        pipeline: &impl BatcherPipeline,
-        texture: &Texture,
-    ) {
+    pub fn set_texture(&mut self, pass: &mut wgpu::RenderPass, pipeline: &impl BatcherPipeline, texture: &Texture) {
         let texture = texture.bind_group();
         if self.current_texture.as_ref() != Some(texture) {
             self.draw(pass, pipeline);
@@ -153,13 +138,13 @@ impl<T: Pod> ImmediateBatcher<T> {
         self.buffer_range.end += 1;
     }
     pub fn draw(&mut self, pass: &mut wgpu::RenderPass, pipeline: &impl BatcherPipeline) {
-        if let Some(texture) = self.current_texture.as_ref() {
-            if !self.buffer_range.is_empty() {
-                pipeline.bind(pass);
-                pipeline.set_buffer(pass, self.buffer.buffer());
-                pipeline.set_texture(pass, texture);
-                pipeline.draw(pass, self.buffer_range.clone());
-            }
+        if let Some(texture) = self.current_texture.as_ref()
+            && !self.buffer_range.is_empty()
+        {
+            pipeline.bind(pass);
+            pipeline.set_buffer(pass, self.buffer.buffer());
+            pipeline.set_texture(pass, texture);
+            pipeline.draw(pass, self.buffer_range.clone());
         }
         self.buffer_range.start = self.buffer_range.end;
     }

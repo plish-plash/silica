@@ -8,6 +8,7 @@ use slotmap::{Key, SecondaryMap, SlotMap};
 
 use crate::layout::*;
 
+#[derive(Clone, Copy)]
 pub struct Pixel;
 
 pub type Point = euclid::Point2D<i32, Pixel>;
@@ -46,9 +47,7 @@ impl Layout {
             Layout::None => Size::zero(),
             Layout::Box => BoxLayout::measure(nodes, children, id, available_space),
             Layout::Stack => StackLayout::measure(nodes, children, id, available_space),
-            Layout::Grid(columns) => {
-                GridLayout::measure(nodes, children, id, available_space, columns)
-            }
+            Layout::Grid(columns) => GridLayout::measure(nodes, children, id, available_space, columns),
         }
     }
     fn layout<Id: Key, Widget: LayoutWidget>(
@@ -125,15 +124,9 @@ impl Align {
     fn align_area(&self, horizontal: bool, mut rect: Rect, size: Size) -> Rect {
         if *self != Align::Stretch {
             let (inner_size, outer_size) = if horizontal {
-                (
-                    size.width,
-                    std::mem::replace(&mut rect.size.width, size.width),
-                )
+                (size.width, std::mem::replace(&mut rect.size.width, size.width))
             } else {
-                (
-                    size.height,
-                    std::mem::replace(&mut rect.size.height, size.height),
-                )
+                (size.height, std::mem::replace(&mut rect.size.height, size.height))
             };
             let offset = match self {
                 Align::End => outer_size - inner_size,
@@ -262,10 +255,7 @@ pub fn measure<Id: Key, Widget: LayoutWidget>(
     let node = &nodes[id];
     let box_size = node.style.box_size();
     available_space = node.style.apply_min_max(available_space - box_size);
-    let mut size = node
-        .style
-        .layout
-        .measure(nodes, children, id, available_space);
+    let mut size = node.style.layout.measure(nodes, children, id, available_space);
     let node = &mut nodes[id];
     if let Some(widget) = node.widget.as_mut() {
         size = size.max(widget.measure(available_space));

@@ -36,6 +36,7 @@ pub fn draw_border<U>(
     drawer: &mut impl DrawQuad<i32, U>,
     mut rect: Box2D<i32, U>,
     border: SideOffsets2D<i32, U>,
+    uv: UvRect,
     color: Rgba,
 ) {
     if rect.is_empty() {
@@ -47,19 +48,20 @@ pub fn draw_border<U>(
     let bl = rect.bottom_left();
     let br = rect.bottom_right();
     if border.top > 0 {
-        drawer.draw_quad(Box2D::new(tl, tr + vec2(0, border.top)), Uv::ZERO, color);
+        drawer.draw_quad(Box2D::new(tl, tr + vec2(0, border.top)), uv, color);
     }
     if border.bottom > 0 {
-        drawer.draw_quad(Box2D::new(bl - vec2(0, border.bottom), br), Uv::ZERO, color);
+        drawer.draw_quad(Box2D::new(bl - vec2(0, border.bottom), br), uv, color);
     }
     if border.left > 0 {
-        drawer.draw_quad(Box2D::new(tl, bl + vec2(border.left, 0)), Uv::ZERO, color);
+        drawer.draw_quad(Box2D::new(tl, bl + vec2(border.left, 0)), uv, color);
     }
     if border.right > 0 {
-        drawer.draw_quad(Box2D::new(tr - vec2(border.right, 0), br), Uv::ZERO, color);
+        drawer.draw_quad(Box2D::new(tr - vec2(border.right, 0), br), uv, color);
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct NineSlice<U> {
     uv_outer: UvRect,
     uv_inner: UvRect,
@@ -67,11 +69,7 @@ pub struct NineSlice<U> {
 }
 
 impl<U> NineSlice<U> {
-    pub fn new(
-        texture_size: TextureSize,
-        rect: TextureRect,
-        insets: SideOffsets2D<u32, Texture>,
-    ) -> Self {
+    pub fn new(texture_size: TextureSize, rect: TextureRect, insets: SideOffsets2D<u32, Texture>) -> Self {
         let uv_outer = Uv::normalize(rect, texture_size);
         let uv_inner = Uv::normalize(rect.inner_box(insets), texture_size);
         NineSlice {
@@ -93,10 +91,7 @@ impl<U> NineSlice<U> {
             color,
         );
         drawer.draw_quad(
-            Box2D::new(
-                point2(rect_center.min.x, rect.min.y),
-                rect_center.top_right(),
-            ),
+            Box2D::new(point2(rect_center.min.x, rect.min.y), rect_center.top_right()),
             UvRect::new(
                 point2(self.uv_inner.min.x, self.uv_outer.min.y),
                 self.uv_inner.top_right(),
@@ -115,10 +110,7 @@ impl<U> NineSlice<U> {
             color,
         );
         drawer.draw_quad(
-            Box2D::new(
-                point2(rect.min.x, rect_center.min.y),
-                rect_center.bottom_left(),
-            ),
+            Box2D::new(point2(rect.min.x, rect_center.min.y), rect_center.bottom_left()),
             UvRect::new(
                 point2(self.uv_outer.min.x, self.uv_inner.min.y),
                 self.uv_inner.bottom_left(),
@@ -131,10 +123,7 @@ impl<U> NineSlice<U> {
             color,
         );
         drawer.draw_quad(
-            Box2D::new(
-                rect_center.top_right(),
-                point2(rect.max.x, rect_center.max.y),
-            ),
+            Box2D::new(rect_center.top_right(), point2(rect.max.x, rect_center.max.y)),
             UvRect::new(
                 self.uv_inner.top_right(),
                 point2(self.uv_outer.max.x, self.uv_inner.max.y),
@@ -153,10 +142,7 @@ impl<U> NineSlice<U> {
             color,
         );
         drawer.draw_quad(
-            Box2D::new(
-                rect_center.bottom_left(),
-                point2(rect_center.max.x, rect.max.y),
-            ),
+            Box2D::new(rect_center.bottom_left(), point2(rect_center.max.x, rect.max.y)),
             UvRect::new(
                 self.uv_inner.bottom_left(),
                 point2(self.uv_inner.max.x, self.uv_outer.max.y),
@@ -177,10 +163,7 @@ impl<U> NineSlice<U> {
             color,
         );
         drawer.draw_quad(
-            Box2D::new(
-                point2(rect_center.min.x, rect.min.y),
-                rect_center.top_right(),
-            ),
+            Box2D::new(point2(rect_center.min.x, rect.min.y), rect_center.top_right()),
             UvRect::new(
                 point2(self.uv_inner.min.x, self.uv_outer.min.y),
                 self.uv_inner.top_right(),

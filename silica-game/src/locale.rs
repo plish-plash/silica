@@ -1,10 +1,10 @@
-use std::{borrow::Cow, path::Path};
+use std::borrow::Cow;
 
 pub use fluent_bundle::FluentArgs;
 use fluent_bundle::{FluentBundle, FluentMessage, FluentResource};
+use silica_asset::{AssetError, AssetSource};
+use silica_gui::FontSystem;
 use unic_langid::LanguageIdentifier;
-
-use crate::GameError;
 
 pub struct Message<'a>(&'a str, Option<FluentMessage<'a>>);
 
@@ -24,37 +24,32 @@ impl Localization {
             }
         }
     }
-    fn load_resource(
+    fn load_resource<S: AssetSource>(
+        asset_source: &mut S,
         locale: LanguageIdentifier,
-    ) -> Result<(LanguageIdentifier, FluentResource), GameError> {
+    ) -> Result<(LanguageIdentifier, FluentResource), AssetError> {
         let path = format!("locale/{locale}.ftl");
-        let asset_path = Path::new("assets").join(&path);
-        if let Ok(source) = std::fs::read_to_string(asset_path) {
-            log::debug!("Loading translations from {path}");
-            return Ok((locale, Self::create_resource(source)));
+        match silica_asset::load_string(asset_source, &path) {
+            Ok(source) => {
+                return Ok((locale, Self::create_resource(source)));
+            }
+            Err(error) => log::error!("{}", error),
         }
         log::warn!(
-            "No translations for {}, falling back to {}",
+            "Failed to load translations for {}, falling back to {}",
             locale,
             Self::FALLBACK_LOCALE
         );
         let path = format!("locale/{}.ftl", Self::FALLBACK_LOCALE);
-        let asset_path = Path::new("assets").join(&path);
-        if let Ok(source) = std::fs::read_to_string(asset_path) {
-            log::debug!("Loading translations from {path}");
-            return Ok((
-                Self::FALLBACK_LOCALE.parse().unwrap(),
-                Self::create_resource(source),
-            ));
-        }
-        Err(GameError::from_string(
-            "Failed to load any translation resources.".to_string(),
-        ))
+        silica_asset::load_string(asset_source, &path)
+            .map(|reader| (Self::FALLBACK_LOCALE.parse().unwrap(), Self::create_resource(reader)))
     }
 
-    pub fn load() -> Result<Self, GameError> {
-        let locale = silica_env::get_locale().parse()?;
-        let (locale, resource) = Self::load_resource(locale)?;
+    pub fn load<S: AssetSource>(asset_source: &mut S) -> Result<Self, AssetError> {
+        let locale = FontSystem::get_system_locale()
+            .parse()
+            .expect("failed to parse system locale");
+        let (locale, resource) = Self::load_resource(asset_source, locale)?;
         let mut bundle = FluentBundle::new(vec![locale]);
         bundle.set_use_isolating(false);
         bundle
@@ -66,11 +61,7 @@ impl Localization {
     pub fn message<'a>(&'a self, id: &'a str) -> Message<'a> {
         Message(id, self.0.get_message(id))
     }
-    pub fn format_value<'a>(
-        &'a self,
-        message: &Message<'a>,
-        args: Option<&FluentArgs>,
-    ) -> Cow<'a, str> {
+    pub fn format_value<'a>(&'a self, message: &Message<'a>, args: Option<&FluentArgs>) -> Cow<'a, str> {
         let id = message.0;
         match message.1.as_ref() {
             Some(message) => {
@@ -92,12 +83,7 @@ impl Localization {
             }
         }
     }
-    pub fn format_attribute<'a>(
-        &'a self,
-        message: &Message<'a>,
-        key: &str,
-        args: Option<&FluentArgs>,
-    ) -> Cow<'a, str> {
+    pub fn format_attribute<'a>(&'a self, message: &Message<'a>, key: &str, args: Option<&FluentArgs>) -> Cow<'a, str> {
         let id = message.0;
         match message.1.as_ref() {
             Some(message) => {

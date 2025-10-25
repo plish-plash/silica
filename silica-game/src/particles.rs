@@ -51,8 +51,7 @@ where
         self.changed = true;
     }
     pub fn update(&mut self, dt: f32) {
-        self.particles
-            .retain_mut(|particle| self.solver.update(particle, dt));
+        self.particles.retain_mut(|particle| self.solver.update(particle, dt));
         self.changed = true;
     }
     pub fn texture(&self) -> &Texture {
@@ -65,8 +64,7 @@ where
     S::Particle: Clone,
 {
     pub fn spawn_many(&mut self, particle: S::Particle, count: usize) {
-        self.particles
-            .resize(self.particles.len() + count, particle);
+        self.particles.resize(self.particles.len() + count, particle);
         self.changed = true;
     }
 }
@@ -82,10 +80,7 @@ where
                 .map(|buffer| buffer.capacity() < self.particles.len())
                 .unwrap_or(true)
             {
-                self.primitives = Some(Buffer::new(
-                    context,
-                    self.particles.len().next_power_of_two(),
-                ));
+                self.primitives = Some(Buffer::new(context, self.particles.len().next_power_of_two()));
             }
             let mut writer = self.primitives.as_mut().unwrap().write(context);
             for particle in self.particles.iter() {

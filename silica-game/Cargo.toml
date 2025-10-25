@@ -4,6 +4,7 @@ version = "0.3.0"
 edition = "2024"
 
 [dependencies]
+silica-asset = { path = "../silica-asset" }
 silica-env = { path = "../silica-env" }
 silica-gui = { path = "../silica-gui" }
 silica-wgpu = { path = "../silica-wgpu" }
@@ -13,7 +14,6 @@ bytemuck = "1.23"
 serde = { version = "1.0", features = ["derive"] }
 euclid = { version = "0.22", features = ["bytemuck", "serde"] }
 
-png = "0.18"
 etagere = "0.2"
 unic-langid = "0.9"
 fluent-bundle = "0.16"

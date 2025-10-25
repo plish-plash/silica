@@ -96,15 +96,12 @@ struct WindowApp<T> {
 impl<T: App> WindowApp<T> {
     fn render(&mut self, event_loop: &ActiveEventLoop) {
         let frame = self.surface.acquire(&self.context);
-        let view: wgpu::TextureView = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let view: wgpu::TextureView = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .context
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        self.app
-            .render(event_loop, &self.context, &view, &mut encoder);
+        self.app.render(event_loop, &self.context, &view, &mut encoder);
         self.context.queue.submit([encoder.finish()]);
         self.window.as_ref().unwrap().pre_present_notify();
         frame.present();
@@ -113,18 +110,11 @@ impl<T: App> WindowApp<T> {
 
 impl<T: App> ApplicationHandler for WindowApp<T> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = Arc::new(
-            event_loop
-                .create_window(self.window_attributes.clone())
-                .unwrap(),
-        );
+        let window = Arc::new(event_loop.create_window(self.window_attributes.clone()).unwrap());
         let size = window.inner_size();
         self.window = Some(window.clone());
-        self.surface.resume(
-            &mut self.context,
-            window,
-            SurfaceSize::new(size.width, size.height),
-        );
+        self.surface
+            .resume(&mut self.context, window, SurfaceSize::new(size.width, size.height));
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
@@ -168,19 +158,19 @@ impl<T: App> ApplicationHandler for WindowApp<T> {
                 is_synthetic: false,
                 ..
             } => {
-                if !event.repeat {
-                    if let PhysicalKey::Code(key_code) = event.physical_key {
-                        self.app.input(
-                            event_loop,
-                            window,
-                            InputEvent::Keyboard(KeyboardEvent {
-                                state: event.state,
-                                physical_key: key_code,
-                                text: event.text,
-                                modifiers: self.modifiers,
-                            }),
-                        );
-                    }
+                if let PhysicalKey::Code(key_code) = event.physical_key
+                    && !event.repeat
+                {
+                    self.app.input(
+                        event_loop,
+                        window,
+                        InputEvent::Keyboard(KeyboardEvent {
+                            state: event.state,
+                            physical_key: key_code,
+                            text: event.text,
+                            modifiers: self.modifiers,
+                        }),
+                    );
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
@@ -191,11 +181,7 @@ impl<T: App> ApplicationHandler for WindowApp<T> {
     }
 }
 
-pub fn run_app<T: App>(
-    window_attributes: WindowAttributes,
-    context: Context,
-    app: T,
-) -> Result<(), EventLoopError> {
+pub fn run_app<T: App>(window_attributes: WindowAttributes, context: Context, app: T) -> Result<(), EventLoopError> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(if T::RUN_CONTINUOUSLY {
         ControlFlow::Poll

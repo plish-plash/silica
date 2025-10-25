@@ -1,128 +1,35 @@
-mod error;
-mod image;
 pub mod locale;
 pub mod particles;
+pub mod texture;
 pub mod util;
 pub mod world2d;
 
-use std::{
-    path::{Path, PathBuf},
-    rc::Rc,
-    sync::Arc,
-    time::Instant,
-};
+use std::{rc::Rc, time::Instant};
 
 pub use euclid as math;
+pub use silica_asset as asset;
+pub use silica_asset::AssetError;
 pub use silica_env::{AppInfo, app_info};
 pub use silica_gui as gui;
 pub use silica_gui::Rgba;
-use silica_gui::{
-    FontSystem,
-    glyphon::fontdb,
-    theme::{StandardTheme, Theme},
-};
+use silica_gui::{Gui, Theme};
 pub use silica_wgpu as render;
-use silica_wgpu::{AdapterFeatures, Context, SurfaceSize, TextureConfig, wgpu};
+use silica_wgpu::{AdapterFeatures, Context, SurfaceSize, wgpu};
 pub use silica_window::{
-    ActiveEventLoop as EventLoop, Icon, InputEvent, KeyboardEvent, MouseButton, MouseButtonEvent,
-    Window, WindowAttributes, keyboard,
+    ActiveEventLoop as EventLoop, Icon, InputEvent, KeyboardEvent, MouseButton, MouseButtonEvent, Window,
+    WindowAttributes, keyboard,
 };
 use silica_window::{App, run_app, run_gui_app};
-
-pub use crate::{
-    error::{GameError, ResultExt},
-    image::*,
-};
 
 pub struct LocalSpace;
 pub struct WorldSpace;
 pub struct ScreenSpace;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AssetPath(pub &'static str);
-
-impl AssetPath {
-    pub fn path(&self) -> PathBuf {
-        Path::new("assets").join(self.0)
-    }
-}
-impl std::fmt::Display for AssetPath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.0)
-    }
-}
-
-pub fn load_asset<T, F>(path: AssetPath, f: F) -> Result<T, GameError>
-where
-    F: FnOnce(&Path) -> Result<T, GameError>,
-{
-    log::debug!("Loading asset {path}");
-    load_file(path.path(), f)
-}
-pub fn load_file<P, T, F>(path: P, f: F) -> Result<T, GameError>
-where
-    P: AsRef<Path>,
-    F: FnOnce(&Path) -> Result<T, GameError>,
-{
-    let path = path.as_ref();
-    // log::debug!("Loading file {}", path.display());
-    f(path).map_err(|e| e.with_read(path.to_path_buf()))
-}
-pub fn save_file<P, T, F>(path: P, f: F) -> Result<T, GameError>
-where
-    P: AsRef<Path>,
-    F: FnOnce(&Path) -> Result<T, GameError>,
-{
-    let path = path.as_ref();
-    log::debug!("Saving file {}", path.display());
-    f(path).map_err(|e| e.with_write(path.to_path_buf()))
-}
-
-pub fn load_asset_directory<F>(path: AssetPath, mut f: F) -> Result<(), GameError>
-where
-    F: FnMut(&Path) -> Result<(), GameError>,
-{
-    let asset_path = path.path();
-    let mut entries: Vec<_> = std::fs::read_dir(&asset_path)
-        .map_err(|e| GameError::from_string(e.to_string()).with_read(asset_path.clone()))?
-        .filter_map(|res| {
-            res.ok()
-                .filter(|e| e.file_type().unwrap().is_file())
-                .map(|e| e.path())
-        })
-        .collect();
-    entries.sort();
-    log::info!("Loading {} assets from {}", entries.len(), path);
-    for path in entries {
-        load_file(path, &mut f)?;
-    }
-    Ok(())
-}
-
-pub fn load_fonts() -> Result<FontSystem, GameError> {
-    let mut db = fontdb::Database::new();
-    load_asset_directory(AssetPath("fonts"), |path| {
-        db.load_font_source(fontdb::Source::Binary(Arc::new(std::fs::read(path)?)));
-        Ok(())
-    })?;
-    Ok(FontSystem::new(silica_env::get_locale(), db))
-}
-
-pub fn load_gui_theme(
-    context: &Context,
-    texture_config: &TextureConfig,
-) -> Result<Rc<dyn Theme>, GameError> {
-    let image = Image::load_asset(AssetPath("theme.png"))?;
-    Ok(Rc::new(StandardTheme::new(
-        context,
-        texture_config,
-        &image.data,
-    )))
-}
+pub type GameAssets = silica_asset::DirectorySource;
 
 pub trait Game: Sized {
     fn window_attributes() -> WindowAttributes;
-    fn load(context: &Context) -> Result<Self, GameError>;
+    fn load(assets: GameAssets, context: &Context) -> Result<Self, AssetError>;
     fn close_window(&mut self) -> bool {
         true
     }
@@ -187,10 +94,52 @@ impl<T: Game> App for GameApp<T> {
     }
 }
 
+fn error_gui(theme: Rc<dyn Theme>, error: AssetError) -> Gui {
+    use gui::*;
+    let error = error.to_string();
+    log::error!("{error}");
+    let mut gui = Gui::new(theme);
+    let root = NodeBuilder::new()
+        .modify_style(|style| {
+            style.layout = Layout::Stack;
+            style.main_align = Align::Center;
+            style.cross_align = Align::Center;
+        })
+        .child(
+            NodeBuilder::new()
+                .modify_style(|style| {
+                    style.direction = Direction::Column;
+                    style.cross_align = Align::Center;
+                    style.border = SideOffsets::new_all_same(1);
+                    style.padding = SideOffsets::new(16, 8, 16, 8);
+                    style.gap = 16;
+                })
+                .child({
+                    let label = LabelBuilder::new(&error)
+                        .font_size(20.0)
+                        .align(TextAlign::Center)
+                        .build_label(&gui);
+                    NodeBuilder::new()
+                        .modify_style(|style| style.max_size.width = 480)
+                        .build_widget(&mut gui, label)
+                })
+                .child(
+                    ButtonBuilder::new()
+                        .label(&mut gui, "Exit")
+                        .button_style(ButtonStyle::Delete)
+                        .build(&mut gui, |gui: &mut Gui| gui.request_exit()),
+                )
+                .build(&mut gui),
+        )
+        .build(&mut gui);
+    gui.set_root(root);
+    gui
+}
+
 pub fn run_game<T: Game>(app_info: AppInfo) {
     silica_env::setup_env(app_info);
     let context = Context::init(AdapterFeatures::default());
-    match T::load(&context) {
+    match T::load(GameAssets::new("assets".into()), &context) {
         Ok(game) => run_app(
             T::window_attributes(),
             context,
@@ -199,14 +148,9 @@ pub fn run_game<T: Game>(app_info: AppInfo) {
                 last_update: Instant::now(),
             },
         ),
-        Err(error) => run_gui_app(
-            T::window_attributes(),
-            context,
-            error::error_gui(error),
-            &Image::load_asset(AssetPath("theme.png"))
-                .unwrap_display()
-                .data,
-        ),
+        Err(error) => run_gui_app(T::window_attributes(), context, "assets/theme", |theme| {
+            error_gui(theme, error)
+        }),
     }
-    .unwrap_display()
+    .unwrap()
 }

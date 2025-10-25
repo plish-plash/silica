@@ -1,10 +1,9 @@
 use silica_game::{
-    AssetPath, EventLoop, Game, GameError, Image, InputEvent, Rgba, Window, WindowAttributes,
-    app_info,
     keyboard::KeyCode,
     render::{Batcher, Context, SurfaceSize, Texture, TextureConfig, Uv, wgpu},
-    run_game,
+    texture::{Image, ImageExt},
     world2d::{Camera2D, Pipeline2D, Point, Quad, Rect, Vector},
+    *,
 };
 
 #[derive(Default)]
@@ -59,10 +58,9 @@ impl Game for WasdGame {
     fn window_attributes() -> WindowAttributes {
         Window::default_attributes().with_title("WASD Example")
     }
-    fn load(context: &Context) -> Result<Self, GameError> {
+    fn load(mut assets: GameAssets, context: &Context) -> Result<Self, AssetError> {
         let texture_config = TextureConfig::new(context, wgpu::FilterMode::Linear);
-        let player_texture =
-            Image::load_asset(AssetPath("player.png"))?.create_texture(context, &texture_config);
+        let player_texture = Image::load_texture(context, &texture_config, &mut assets, "player.png")?;
         Ok(WasdGame {
             texture_config,
             pipeline: None,

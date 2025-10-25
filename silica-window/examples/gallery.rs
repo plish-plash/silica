@@ -3,9 +3,7 @@ use silica_wgpu::{AdapterFeatures, Context};
 use silica_window::{Window, run_gui_app};
 
 fn build_gui(gui: &mut Gui) -> NodeId {
-    let label = LabelBuilder::new("Hello, World!")
-        .font_size(24.0)
-        .build(gui);
+    let label = LabelBuilder::new("Hello, World!").font_size(24.0).build(gui);
     NodeBuilder::new()
         .modify_style(|style| {
             style.direction = Direction::Column;
@@ -30,10 +28,7 @@ fn build_gui(gui: &mut Gui) -> NodeId {
                         .modify_style(|style| style.grow = true)
                         .label(gui, "Toggle Button")
                         .build_toggle(gui, move |gui, toggled| {
-                            label.set_text(
-                                gui,
-                                &format!("Toggle Button {}", if toggled { "On" } else { "Off" }),
-                            );
+                            label.set_text(gui, &format!("Toggle Button {}", if toggled { "On" } else { "Off" }));
                         }),
                 )
                 .child(
@@ -82,15 +77,17 @@ fn build_gui(gui: &mut Gui) -> NodeId {
 }
 
 fn main() {
-    let mut gui = Gui::new(FontSystem::with_system_fonts());
-    let root = build_gui(&mut gui);
-    gui.set_root(root);
     let context = Context::init(AdapterFeatures::default());
     run_gui_app(
         Window::default_attributes().with_title("Gallery Example"),
         context,
-        gui,
-        include_bytes!("theme.data"),
+        "theme/dark_theme",
+        |theme| {
+            let mut gui = Gui::new(theme);
+            let root = build_gui(&mut gui);
+            gui.set_root(root);
+            gui
+        },
     )
     .unwrap();
 }

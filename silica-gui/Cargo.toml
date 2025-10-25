@@ -4,6 +4,7 @@ version = "0.3.0"
 edition = "2024"
 
 [dependencies]
+silica-asset = { path = "../silica-asset" }
 silica-color = { path = "../silica-color" }
 silica-layout = { path = "../silica-layout" }
 silica-wgpu = { path = "../silica-wgpu" }
@@ -13,3 +14,4 @@ serde = { version = "1.0", features = ["derive"] }
 euclid = { version = "0.22", features = ["bytemuck", "serde"] }
 slotmap = "1.0"
 glyphon = "0.9"
+sys-locale = "0.3"

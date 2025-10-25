@@ -4,6 +4,7 @@ version = "0.3.0"
 edition = "2024"
 
 [dependencies]
+silica-asset = { path = "../silica-asset" }
 silica-gui = { path = "../silica-gui" }
 silica-wgpu = { path = "../silica-wgpu" }
 winit = "0.30"

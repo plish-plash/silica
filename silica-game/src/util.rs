@@ -17,10 +17,7 @@ pub struct Timer {
 
 impl Timer {
     pub fn new(time: f32) -> Self {
-        Timer {
-            time: 0.0,
-            max: time,
-        }
+        Timer { time: 0.0, max: time }
     }
     pub fn reset(&mut self) {
         self.time -= self.max;
@@ -51,10 +48,10 @@ impl<T> Grid<T> {
     pub fn size(&self) -> Size2D<usize, T> {
         self.size
     }
-    pub fn iter(&self) -> std::slice::Iter<T> {
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.data.iter()
     }
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<T> {
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
         self.data.iter_mut()
     }
 }

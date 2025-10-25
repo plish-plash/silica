@@ -18,9 +18,7 @@ impl Uv {
     pub const FULL: UvRect = UvRect::new(point2(0.0, 0.0), point2(1.0, 1.0));
     pub fn normalize(rect: TextureRect, texture_size: TextureSize) -> UvRect {
         let size = texture_size.to_f32();
-        rect.to_f32()
-            .scale(1.0 / size.width, 1.0 / size.height)
-            .cast_unit()
+        rect.to_f32().scale(1.0 / size.width, 1.0 / size.height).cast_unit()
     }
 }
 
@@ -97,10 +95,10 @@ impl Context {
 
             let mut chosen_adapter = None;
             for adapter in adapters {
-                if let Some(surface) = surface {
-                    if !adapter.is_surface_supported(surface) {
-                        continue;
-                    }
+                if let Some(surface) = surface
+                    && !adapter.is_surface_supported(surface)
+                {
+                    continue;
                 }
 
                 let required_features = *required_features;
@@ -137,8 +135,7 @@ impl Context {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
-                required_features: (features.optional_features & adapter.features())
-                    | features.required_features,
+                required_features: (features.optional_features & adapter.features()) | features.required_features,
                 required_limits: needed_limits,
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                 trace: wgpu::Trace::Off,
@@ -212,7 +209,7 @@ impl Surface {
 
     /// Resize the surface, making sure to not resize to zero.
     pub fn resize(&mut self, context: &Context, size: SurfaceSize) {
-        log::debug!("Surface resize {size:?}");
+        // log::debug!("Surface resize {size:?}");
 
         let config = self.config.as_mut().unwrap();
         config.width = size.width.max(1);
@@ -310,9 +307,7 @@ impl<T: Pod> Buffer<T> {
         if data.is_empty() {
             return;
         }
-        context
-            .queue
-            .write_buffer(&self.buffer, 0, bytemuck::cast_slice(data));
+        context.queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(data));
     }
     pub fn write<'a>(&'a mut self, context: &'a Context) -> BufferWriter<'a, T> {
         BufferWriter {

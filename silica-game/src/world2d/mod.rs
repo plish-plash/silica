@@ -125,13 +125,11 @@ impl Pipeline2D {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 compilation_options: PipelineCompilationOptions::default(),
-                buffers: &[
-                    VertexBufferLayout {
-                        array_stride: std::mem::size_of::<Quad>() as u64,
-                        step_mode: VertexStepMode::Instance,
-                        attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x4, 3 => Float32x4],
-                    },
-                ],
+                buffers: &[VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Quad>() as u64,
+                    step_mode: VertexStepMode::Instance,
+                    attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x4, 3 => Float32x4],
+                }],
             },
             fragment: Some(FragmentState {
                 module: &shader,
@@ -160,12 +158,7 @@ impl Pipeline2D {
         }
     }
 
-    pub fn set_camera(
-        &mut self,
-        context: &Context,
-        camera_transform: CameraTransform,
-        size: SurfaceSize,
-    ) {
+    pub fn set_camera(&mut self, context: &Context, camera_transform: CameraTransform, size: SurfaceSize) {
         let uniforms = Uniforms {
             view_matrix: camera_transform,
             screen_resolution: size.to_f32().to_array(),

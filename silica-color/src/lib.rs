@@ -27,8 +27,8 @@
 //! often fall flat if you need to do more than the simplest of operations on the colors themselves.
 //! Here are some specific needs I have:
 //! - Stored as repr(C) f32s to be easy to use in wgpu shaders.
-//! - Serialize and deserialize in a straightforward way. Alpha should default to 1 if not
-//!   specified, since opaque colors are very common.
+//! - Serialize and deserialize in a straightforward way. Alpha should default to 1 if not specified, since opaque
+//!   colors are very common.
 //! - Convert to and from u32 linear hex codes.
 //! - Constants for black and white.
 //!

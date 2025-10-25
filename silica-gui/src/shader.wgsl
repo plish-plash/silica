@@ -44,5 +44,9 @@ fn vs_main(in_vert: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in_frag: VertexOutput) -> @location(0) vec4f {
-    return in_frag.color * textureSampleLevel(tex, sam, in_frag.uv, 0.0);
+    if in_frag.uv.x < -1.0 {
+        return in_frag.color;
+    } else {
+        return in_frag.color * textureSampleLevel(tex, sam, in_frag.uv, 0.0);
+    }
 }

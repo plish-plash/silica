@@ -1,0 +1,43 @@
+font: Rubik-Light.ttf
+texture: theme.png
+palette:
+  background_color: "#181818"
+  border_color: "#414141"
+  text_color: "#e5e5e5"
+  accent_color: "#426074"
+  accent_background_color: "#1e313e"
+gutter:
+  rect: { min: [0, 0], max: [16, 16] }
+  insets: { top: 7, right: 7, bottom: 7, left: 7, _unit: null }
+button:
+  normal:
+    rect: { min: [0, 0], max: [16, 16] }
+    insets: { top: 7, right: 7, bottom: 7, left: 7, _unit: null }
+  press:
+    rect: { min: [16, 0], max: [32, 16] }
+    insets: { top: 7, right: 7, bottom: 7, left: 7, _unit: null }
+button_toggled:
+  normal:
+    rect: { min: [32, 0], max: [48, 16] }
+    insets: { top: 7, right: 7, bottom: 7, left: 7, _unit: null }
+button_confirm:
+  normal:
+    rect: { min: [0, 16], max: [16, 32] }
+    insets: { top: 7, right: 7, bottom: 7, left: 7, _unit: null }
+  press:
+    rect: { min: [16, 16], max: [32, 32] }
+    insets: { top: 7, right: 7, bottom: 7, left: 7, _unit: null }
+button_delete:
+  normal:
+    rect: { min: [32, 16], max: [48, 32] }
+    insets: { top: 7, right: 7, bottom: 7, left: 7, _unit: null }
+  press:
+    rect: { min: [48, 16], max: [64, 32] }
+    insets: { top: 7, right: 7, bottom: 7, left: 7, _unit: null }
+tab:
+  normal:
+    rect: { min: [0, 32], max: [16, 48] }
+    insets: { top: 9, right: 7, bottom: 5, left: 7, _unit: null }
+tab_active:
+  rect: { min: [16, 32], max: [32, 48] }
+  insets: { top: 9, right: 7, bottom: 5, left: 7, _unit: null }
