@@ -9,6 +9,7 @@ silica-env = { path = "../silica-env" }
 silica-gui = { path = "../silica-gui" }
 silica-wgpu = { path = "../silica-wgpu" }
 silica-window = { path = "../silica-window" }
+
 log = "0.4"
 bytemuck = "1.23"
 serde = { version = "1.0", features = ["derive"] }
@@ -17,3 +18,4 @@ euclid = { version = "0.22", features = ["bytemuck", "serde"] }
 etagere = "0.2"
 unic-langid = "0.9"
 fluent-bundle = "0.16"
+postcard = { version = "1.1", default-features = false, features = ["use-std"] }

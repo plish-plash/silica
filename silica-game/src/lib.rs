@@ -4,9 +4,14 @@ pub mod texture;
 pub mod util;
 pub mod world2d;
 
-use std::{rc::Rc, time::Instant};
+use std::{
+    io::{Error as IoError, ErrorKind},
+    rc::Rc,
+    time::Instant,
+};
 
 pub use euclid as math;
+use serde::{Serialize, de::DeserializeOwned};
 pub use silica_asset as asset;
 pub use silica_asset::AssetError;
 pub use silica_env::{AppInfo, app_info};
@@ -153,4 +158,14 @@ pub fn run_game<T: Game>(app_info: AppInfo) {
         }),
     }
     .unwrap()
+}
+
+pub fn load_data<T: DeserializeOwned>(path: &str) -> Result<T, IoError> {
+    let buf = std::fs::read(path)?;
+    postcard::from_bytes(&buf).map_err(|e| IoError::new(ErrorKind::InvalidData, e))
+}
+
+pub fn save_data<T: Serialize>(path: &str, data: &T) -> Result<(), IoError> {
+    let buf = postcard::to_stdvec(data).map_err(IoError::other)?;
+    std::fs::write(path, buf)
 }
