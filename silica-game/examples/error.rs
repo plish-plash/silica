@@ -11,7 +11,7 @@ impl Game for ErrorGame {
     fn window_attributes() -> WindowAttributes {
         Window::default_attributes().with_title("Error Example")
     }
-    fn load(assets: GameAssets, _context: &Context) -> Result<Self, AssetError> {
+    fn load(_context: &Context, assets: GameAssets) -> Result<Self, AssetError> {
         Err(AssetError::new(
             &assets,
             IoError::other("An error occurred while loading the game."),

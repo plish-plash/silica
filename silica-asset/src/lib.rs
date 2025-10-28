@@ -24,18 +24,18 @@ pub struct AssetError {
 }
 
 impl AssetError {
-    pub fn new<S: Display>(source: S, error: IoError) -> Self {
+    pub fn new<S: Display, E: Into<IoError>>(source: S, error: E) -> Self {
         AssetError {
             source: source.to_string(),
             path: None,
-            error,
+            error: error.into(),
         }
     }
-    pub fn with_path<S: Display>(source: S, path: &AssetPath, error: IoError) -> Self {
+    pub fn with_path<S: Display, E: Into<IoError>>(source: S, path: &AssetPath, error: E) -> Self {
         AssetError {
             source: source.to_string(),
             path: Some(path.to_string()),
-            error,
+            error: error.into(),
         }
     }
 }
@@ -64,6 +64,7 @@ pub trait AssetSource: Display {
     fn read_directory(&self, path: &AssetPath) -> Result<Vec<String>>;
 }
 
+#[derive(Debug)]
 pub struct DirectorySource(PathBuf);
 
 impl DirectorySource {
@@ -104,6 +105,7 @@ impl AssetSource for DirectorySource {
     }
 }
 
+#[derive(Debug)]
 pub struct ArchiveSource {
     path: PathBuf,
     archive: ZipArchive<BufReader<File>>,
@@ -112,7 +114,7 @@ pub struct ArchiveSource {
 impl ArchiveSource {
     pub fn new(path: PathBuf) -> Result<Self> {
         let reader = BufReader::new(File::open(&path).map_err(|e| AssetError::new(path.display(), e))?);
-        let archive = ZipArchive::new(reader).map_err(|e| AssetError::new(path.display(), e.into()))?;
+        let archive = ZipArchive::new(reader).map_err(|e| AssetError::new(path.display(), e))?;
         Ok(ArchiveSource { path, archive })
     }
 }
@@ -127,7 +129,7 @@ impl AssetSource for ArchiveSource {
         self.archive
             .by_name_seek(path)
             .map(BufReader::new)
-            .map_err(|e| AssetError::with_path(self.path.display(), path, e.into()))
+            .map_err(|e| AssetError::with_path(self.path.display(), path, e))
     }
     fn read_directory(&self, path: &AssetPath) -> Result<Vec<String>> {
         let mut entries = Vec::new();
@@ -140,6 +142,43 @@ impl AssetSource for ArchiveSource {
         }
         entries.sort();
         Ok(entries)
+    }
+}
+
+#[derive(Debug)]
+pub struct SubdirectorySource<'a, S> {
+    base: &'a mut S,
+    path: String,
+}
+
+impl<'a, S> SubdirectorySource<'a, S> {
+    pub fn new(base: &'a mut S, path: String) -> Self {
+        SubdirectorySource { base, path }
+    }
+}
+impl<'a, S> Display for SubdirectorySource<'a, S>
+where
+    S: Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.base, self.path)
+    }
+}
+impl<'a, S> AssetSource for SubdirectorySource<'a, S>
+where
+    S: AssetSource,
+{
+    type Reader<'b>
+        = S::Reader<'b>
+    where
+        Self: 'b;
+    fn load(&mut self, path: &AssetPath) -> Result<BufReader<Self::Reader<'_>>> {
+        let path = format!("{}/{}", self.path, path);
+        self.base.load(&path)
+    }
+    fn read_directory(&self, path: &AssetPath) -> Result<Vec<String>> {
+        let path = format!("{}/{}", self.path, path);
+        self.base.read_directory(&path)
     }
 }
 

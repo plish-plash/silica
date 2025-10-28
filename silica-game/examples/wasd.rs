@@ -58,7 +58,7 @@ impl Game for WasdGame {
     fn window_attributes() -> WindowAttributes {
         Window::default_attributes().with_title("WASD Example")
     }
-    fn load(mut assets: GameAssets, context: &Context) -> Result<Self, AssetError> {
+    fn load(context: &Context, mut assets: GameAssets) -> Result<Self, AssetError> {
         let texture_config = TextureConfig::new(context, wgpu::FilterMode::Linear);
         let player_texture = Image::load_texture(context, &texture_config, &mut assets, "player.png")?;
         Ok(WasdGame {

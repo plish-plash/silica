@@ -17,9 +17,9 @@ pub use silica_asset::AssetError;
 pub use silica_env::{AppInfo, app_info};
 pub use silica_gui as gui;
 pub use silica_gui::Rgba;
-use silica_gui::{Gui, Theme};
+use silica_gui::{Gui, Theme, theme::StandardTheme};
 pub use silica_wgpu as render;
-use silica_wgpu::{AdapterFeatures, Context, SurfaceSize, wgpu};
+use silica_wgpu::{AdapterFeatures, Context, SurfaceSize, TextureConfig, wgpu};
 pub use silica_window::{
     ActiveEventLoop as EventLoop, Icon, InputEvent, KeyboardEvent, MouseButton, MouseButtonEvent, Window,
     WindowAttributes, keyboard,
@@ -34,7 +34,7 @@ pub type GameAssets = silica_asset::DirectorySource;
 
 pub trait Game: Sized {
     fn window_attributes() -> WindowAttributes;
-    fn load(assets: GameAssets, context: &Context) -> Result<Self, AssetError>;
+    fn load(context: &Context, assets: GameAssets) -> Result<Self, AssetError>;
     fn close_window(&mut self) -> bool {
         true
     }
@@ -144,7 +144,7 @@ fn error_gui(theme: Rc<dyn Theme>, error: AssetError) -> Gui {
 pub fn run_game<T: Game>(app_info: AppInfo) {
     silica_env::setup_env(app_info);
     let context = Context::init(AdapterFeatures::default());
-    match T::load(GameAssets::new("assets".into()), &context) {
+    match T::load(&context, GameAssets::new("assets".into())) {
         Ok(game) => run_app(
             T::window_attributes(),
             context,
@@ -158,6 +158,19 @@ pub fn run_game<T: Game>(app_info: AppInfo) {
         }),
     }
     .unwrap()
+}
+
+pub fn load_gui_theme(
+    context: &Context,
+    texture_config: &TextureConfig,
+    assets: &mut GameAssets,
+) -> Result<Rc<dyn Theme>, AssetError> {
+    let theme = StandardTheme::load(
+        context,
+        texture_config,
+        &mut asset::SubdirectorySource::new(assets, "theme".into()),
+    )?;
+    Ok(Rc::new(theme))
 }
 
 pub fn load_data<T: DeserializeOwned>(path: &str) -> Result<T, IoError> {
