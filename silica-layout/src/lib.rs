@@ -2,7 +2,7 @@ mod layout;
 
 use std::marker::PhantomData;
 
-use euclid::{point2, size2};
+use euclid::{BoolVector2D, point2, size2};
 use silica_color::Rgba;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
@@ -21,6 +21,7 @@ pub type SideOffsets = euclid::SideOffsets2D<i32, Pixel>;
 pub enum Color {
     Background,
     Border,
+    Gutter,
     Accent,
     Foreground,
     Custom(Rgba),
@@ -82,13 +83,13 @@ impl Direction {
     fn layout_area(&self, rect: &mut Rect, size: Size, gap: i32) -> Rect {
         match self {
             Direction::Row => {
-                let area = Rect::new(rect.origin, size2(size.width, rect.height()));
+                let area = Rect::new(rect.origin, size2(size.width, size.height.max(rect.height())));
                 rect.origin.x += size.width + gap;
                 rect.size.width -= size.width + gap;
                 area
             }
             Direction::Column => {
-                let area = Rect::new(rect.origin, size2(rect.width(), size.height));
+                let area = Rect::new(rect.origin, size2(size.width.max(rect.width()), size.height));
                 rect.origin.y += size.height + gap;
                 rect.size.height -= size.height + gap;
                 area
@@ -97,14 +98,14 @@ impl Direction {
                 rect.size.width -= size.width + gap;
                 Rect::new(
                     point2(rect.max_x() + gap, rect.min_y()),
-                    size2(size.width, rect.height()),
+                    size2(size.width, size.height.max(rect.height())),
                 )
             }
             Direction::ColumnReverse => {
                 rect.size.height -= size.height + gap;
                 Rect::new(
                     point2(rect.min_x(), rect.max_y() + gap),
-                    size2(rect.width(), size.height),
+                    size2(size.width.max(rect.width()), size.height),
                 )
             }
         }
@@ -152,6 +153,7 @@ pub struct Style {
     pub min_size: Size,
     pub max_size: Size,
     pub grow: bool,
+    pub overflow: BoolVector2D,
 
     pub layout: Layout,
     pub direction: Direction,
@@ -187,6 +189,7 @@ impl Default for Style {
             min_size: Size::zero(),
             max_size: Size::new(i32::MAX, i32::MAX),
             grow: false,
+            overflow: BoolVector2D { x: false, y: false },
             layout: Layout::default(),
             direction: Direction::default(),
             main_align: Align::default(),
@@ -201,6 +204,7 @@ impl Default for Style {
 
 #[derive(Default, Clone)]
 pub struct Area {
+    pub children_size: Size,
     pub measured_size: Size,
     pub hidden: bool,
     pub content_rect: Rect,
@@ -255,8 +259,15 @@ pub fn measure<Id: Key, Widget: LayoutWidget>(
     let node = &nodes[id];
     let box_size = node.style.box_size();
     available_space = node.style.apply_min_max(available_space - box_size);
-    let mut size = node.style.layout.measure(nodes, children, id, available_space);
+    let mut size = node.style.layout.measure(
+        nodes,
+        children,
+        id,
+        node.style.overflow.select_size(Size::splat(i32::MAX), available_space),
+    );
     let node = &mut nodes[id];
+    node.area.children_size = size;
+    size = node.style.overflow.select_size(Size::zero(), size);
     if let Some(widget) = node.widget.as_mut() {
         size = size.max(widget.measure(available_space));
     }

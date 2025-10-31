@@ -21,14 +21,18 @@ impl BoxLayout {
         for child_id in child_ids.iter() {
             let child_size = measure(nodes, children, *child_id, available_space);
             if direction.horizontal() {
-                available_space.width -= child_size.width + gap;
+                if available_space.width != i32::MAX {
+                    available_space.width -= child_size.width + gap;
+                }
                 if size.width > 0 {
                     size.width += gap;
                 }
                 size.width += child_size.width;
                 size.height = size.height.max(child_size.height);
             } else {
-                available_space.height -= child_size.height + gap;
+                if available_space.height != i32::MAX {
+                    available_space.height -= child_size.height + gap;
+                }
                 size.width = size.width.max(child_size.width);
                 if size.height > 0 {
                     size.height += gap;
@@ -170,14 +174,18 @@ impl GridLayout {
                 nodes[child_ids[i]].area.measured_size = child_size;
             }
             if direction.horizontal() {
-                available_space.width -= child_size.width + gap;
+                if available_space.width != i32::MAX {
+                    available_space.width -= child_size.width + gap;
+                }
                 if size.width > 0 {
                     size.width += gap;
                 }
                 size.width += child_size.width;
                 size.height = size.height.max(child_size.height);
             } else {
-                available_space.height -= child_size.height + gap;
+                if available_space.height != i32::MAX {
+                    available_space.height -= child_size.height + gap;
+                }
                 size.width = size.width.max(child_size.width);
                 if size.height > 0 {
                     size.height += gap;

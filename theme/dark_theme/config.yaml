@@ -3,6 +3,7 @@ texture: theme.png
 palette:
   background_color: "#181818"
   border_color: "#414141"
+  gutter_color: "#121212"
   text_color: "#e5e5e5"
   accent_color: "#426074"
   accent_background_color: "#1e313e"

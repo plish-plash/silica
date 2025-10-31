@@ -58,20 +58,29 @@ fn build_gui(gui: &mut Gui) -> NodeId {
                     &format!("Selected Tab {}", index.map(|i| i + 1).unwrap_or_default()),
                 );
             });
-            let buttons = gui.create_node(Style {
-                gap: 4,
-                ..Default::default()
-            });
-            for (index, label) in ["One", "Two", "Three", "Four"].into_iter().enumerate() {
-                ButtonBuilder::new()
-                    .parent(buttons)
-                    .button_style(ButtonStyle::Tab)
-                    .label(gui, label)
-                    .hotkey(Hotkey::new(char::from_digit(index as u32 + 1, 10).unwrap()))
-                    .toggled(index == 1)
-                    .build_exclusive(gui, &group);
-            }
-            buttons
+            TabsBuilder::new(gui, group)
+                .tabs(gui, ["One", "Two", "Three", "Four"], 1)
+                .content({
+                    let content = gui.create_node(Style {
+                        padding: SideOffsets::new_all_same(8),
+                        ..Default::default()
+                    });
+                    let slider = Slider::new(false, move |gui, value| {
+                        label.set_text(gui, &format!("Moved Slider {}", value));
+                    });
+                    let widget = gui.create_widget(
+                        Style {
+                            background_color: Some(Color::Gutter),
+                            min_size: Size::splat(32),
+                            grow: true,
+                            ..Default::default()
+                        },
+                        slider,
+                    );
+                    gui.add_child(content, widget);
+                    content
+                })
+                .build(gui)
         })
         .build(gui)
 }

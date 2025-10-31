@@ -32,6 +32,8 @@ struct StandardPalette {
     #[serde(deserialize_with = "string_or_struct")]
     border_color: Rgba,
     #[serde(deserialize_with = "string_or_struct")]
+    gutter_color: Rgba,
+    #[serde(deserialize_with = "string_or_struct")]
     text_color: Rgba,
     #[serde(deserialize_with = "string_or_struct")]
     accent_color: Rgba,
@@ -183,6 +185,7 @@ impl Theme for StandardTheme {
         match color {
             Color::Background => self.palette.background_color,
             Color::Border => self.palette.border_color,
+            Color::Gutter => self.palette.gutter_color,
             Color::Accent => self.palette.accent_color,
             Color::Foreground => self.palette.text_color,
             Color::Custom(rgba) => rgba,

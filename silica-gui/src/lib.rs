@@ -428,6 +428,7 @@ impl Gui {
                 color,
             );
         }
+        let scroll_count = renderer.scroll.len();
         if let Some(widget) = node.widget.as_mut() {
             widget.draw(renderer, &node.area);
         }
@@ -435,6 +436,9 @@ impl Gui {
             for child in node_children.iter() {
                 Self::render_node(*child, nodes, children, renderer);
             }
+        }
+        while renderer.scroll.len() > scroll_count {
+            renderer.pop_scroll_area();
         }
     }
     pub fn render(&mut self, context: &Context, pass: &mut wgpu::RenderPass, resources: &mut render::GuiResources) {
@@ -446,6 +450,7 @@ impl Gui {
             batcher,
             context,
             pass,
+            scroll: Vec::new(),
         };
         Self::render_node(self.root, &mut self.nodes, &self.children, &mut renderer);
         renderer.finish();

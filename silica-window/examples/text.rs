@@ -11,14 +11,14 @@ fn main() {
         |theme| {
             let mut gui = Gui::new(theme);
             let label = Label::create(&mut gui, include_str!("ipsum.txt"));
-            gui.set_root(label);
-            gui.set_style(
-                label,
-                Style {
-                    padding: SideOffsets::new_all_same(8),
-                    ..Default::default()
-                },
-            );
+            gui.modify_style(label, |style| {
+                style.padding = SideOffsets::new_all_same(8);
+            });
+            let scroll = ScrollAreaBuilder::new(&mut gui, Style::default())
+                .child(label)
+                .vertical_scroll(&mut gui)
+                .build(&mut gui);
+            gui.set_root(scroll);
             gui
         },
     )

@@ -1,8 +1,9 @@
 use std::{num::NonZeroU64, ops::Range, rc::Rc};
 
 use bytemuck::{Pod, Zeroable};
-use euclid::{Box2D, point2};
+use euclid::{Box2D, point2, size2};
 use glyphon::TextRenderer;
+use silica_layout::{Rect, Vector};
 use silica_wgpu::{
     BatcherPipeline, Context, ImmediateBatcher, SurfaceSize, Texture, TextureConfig, UvRect, draw::DrawQuad, wgpu,
 };
@@ -15,6 +16,13 @@ pub struct Quad {
     pub rect: Box2D<i32, Pixel>,
     pub uv: UvRect,
     pub color: Rgba,
+}
+
+impl Quad {
+    pub fn offset(mut self, offset: Vector) -> Self {
+        self.rect = self.rect.translate(offset);
+        self
+    }
 }
 
 #[repr(C)]
@@ -214,12 +222,18 @@ impl GuiResources {
     }
 }
 
+pub(crate) struct ScrollArea {
+    clip: Rect,
+    offset: Vector,
+}
+
 pub struct GuiRenderer<'a, 'b> {
     pub(crate) theme: Rc<dyn Theme>,
     pub(crate) resources: &'a mut GuiResources,
     pub(crate) batcher: ImmediateBatcher<Quad>,
     pub(crate) context: &'a Context,
     pub(crate) pass: &'a mut wgpu::RenderPass<'b>,
+    pub(crate) scroll: Vec<ScrollArea>,
 }
 
 impl GuiRenderer<'_, '_> {
@@ -234,14 +248,22 @@ impl GuiRenderer<'_, '_> {
     pub fn draw_theme_quad(&mut self, quad: Quad) {
         self.batcher
             .set_texture(self.pass, &self.resources.quad_pipeline, self.theme.texture());
-        self.batcher
-            .queue(self.context, self.pass, &self.resources.quad_pipeline, quad);
+        self.batcher.queue(
+            self.context,
+            self.pass,
+            &self.resources.quad_pipeline,
+            quad.offset(self.scroll_offset()),
+        );
     }
     pub fn draw_quad(&mut self, texture: &Texture, quad: Quad) {
         self.batcher
             .set_texture(self.pass, &self.resources.quad_pipeline, texture);
-        self.batcher
-            .queue(self.context, self.pass, &self.resources.quad_pipeline, quad);
+        self.batcher.queue(
+            self.context,
+            self.pass,
+            &self.resources.quad_pipeline,
+            quad.offset(self.scroll_offset()),
+        );
     }
     pub fn create_text_renderer(&mut self) -> TextRenderer {
         TextRenderer::new(
@@ -257,6 +279,7 @@ impl GuiRenderer<'_, '_> {
         text_renderer: &mut TextRenderer,
         text_areas: impl IntoIterator<Item = glyphon::TextArea<'a>>,
     ) {
+        let offset = self.scroll_offset();
         text_renderer
             .prepare(
                 &self.context.device,
@@ -264,7 +287,11 @@ impl GuiRenderer<'_, '_> {
                 &mut font_system.borrow_mut(),
                 &mut self.resources.text_resources.atlas,
                 &self.resources.text_resources.viewport,
-                text_areas,
+                text_areas.into_iter().map(|mut area| {
+                    area.left += offset.x as f32;
+                    area.top += offset.y as f32;
+                    area
+                }),
                 &mut self.resources.text_resources.swash_cache,
             )
             .unwrap();
@@ -278,6 +305,28 @@ impl GuiRenderer<'_, '_> {
                 self.pass,
             )
             .unwrap();
+    }
+
+    fn scroll_offset(&self) -> Vector {
+        self.scroll.last().map(|area| area.offset).unwrap_or_default()
+    }
+    fn set_scissor_rect(&mut self) {
+        let rect = self.scroll.last().map(|area| area.clip.to_u32()).unwrap_or_else(|| {
+            let res = self.resources.text_resources.viewport.resolution();
+            euclid::Rect::new(point2(0, 0), size2(res.width, res.height))
+        });
+        self.pass
+            .set_scissor_rect(rect.origin.x, rect.origin.y, rect.size.width, rect.size.height);
+    }
+    pub fn push_scroll_area(&mut self, clip: Rect, offset: Vector) {
+        self.batcher.draw(self.pass, &self.resources.quad_pipeline);
+        self.scroll.push(ScrollArea { clip, offset });
+        self.set_scissor_rect();
+    }
+    pub fn pop_scroll_area(&mut self) {
+        self.batcher.draw(self.pass, &self.resources.quad_pipeline);
+        self.scroll.pop();
+        self.set_scissor_rect();
     }
 }
 impl DrawQuad<i32, Pixel> for GuiRenderer<'_, '_> {
