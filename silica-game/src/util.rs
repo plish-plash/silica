@@ -20,6 +20,9 @@ impl Timer {
         Timer { time: 0.0, max: time }
     }
     pub fn reset(&mut self) {
+        self.time = 0.0;
+    }
+    pub fn wrap(&mut self) {
         self.time -= self.max;
     }
     pub fn update(&mut self, dt: f32) -> bool {

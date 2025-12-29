@@ -20,6 +20,15 @@ impl Uv {
         let size = texture_size.to_f32();
         rect.to_f32().scale(1.0 / size.width, 1.0 / size.height).cast_unit()
     }
+    pub fn flip(mut rect: UvRect, flip_h: bool, flip_v: bool) -> UvRect {
+        if flip_h {
+            std::mem::swap(&mut rect.min.x, &mut rect.max.x);
+        }
+        if flip_v {
+            std::mem::swap(&mut rect.min.y, &mut rect.max.y);
+        }
+        rect
+    }
 }
 
 pub struct AdapterFeatures {
