@@ -6,7 +6,7 @@ use std::{
     fmt::Display,
     fs::File,
     io::{BufReader, Error as IoError, ErrorKind, Read, Seek},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use serde::de::DeserializeOwned;
@@ -70,6 +70,9 @@ pub struct DirectorySource(PathBuf);
 impl DirectorySource {
     pub fn new(path: PathBuf) -> Self {
         DirectorySource(path)
+    }
+    pub fn path(&self) -> &Path {
+        &self.0
     }
 }
 impl Display for DirectorySource {

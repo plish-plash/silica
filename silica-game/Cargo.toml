@@ -19,3 +19,4 @@ etagere = "0.2"
 unic-langid = "0.9"
 fluent-bundle = "0.16"
 postcard = { version = "1.1", default-features = false, features = ["use-std"] }
+kira = "0.11"
