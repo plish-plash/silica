@@ -7,6 +7,7 @@ use std::marker::PhantomData;
 use bytemuck::Pod;
 use euclid::point2;
 pub use wgpu;
+use wgpu::wgt::WgpuHasDisplayHandle;
 
 pub use crate::{batcher::*, texture::*};
 
@@ -100,7 +101,7 @@ impl Context {
             );
             adapter
         } else {
-            let adapters = instance.enumerate_adapters(Backends::all());
+            let adapters = instance.enumerate_adapters(Backends::all()).await;
 
             let mut chosen_adapter = None;
             for adapter in adapters {
@@ -125,10 +126,10 @@ impl Context {
     }
 
     /// Initializes the device with the given features.
-    pub async fn init_async(features: AdapterFeatures) -> Self {
+    pub async fn init_async(display: Box<dyn WgpuHasDisplayHandle>, features: AdapterFeatures) -> Self {
         log::info!("Initializing wgpu...");
 
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::from_env_or_default());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(display));
 
         let adapter = Self::get_adapter_with_capabilities_or_from_env(
             &instance,
@@ -146,6 +147,7 @@ impl Context {
                 label: None,
                 required_features: (features.optional_features & adapter.features()) | features.required_features,
                 required_limits: needed_limits,
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                 trace: wgpu::Trace::Off,
             })
@@ -161,9 +163,15 @@ impl Context {
         }
     }
 
-    pub fn init(features: AdapterFeatures) -> Self {
-        pollster::block_on(Self::init_async(features))
+    pub fn init(display: Box<dyn WgpuHasDisplayHandle>, features: AdapterFeatures) -> Self {
+        pollster::block_on(Self::init_async(display, features))
     }
+}
+
+pub enum CurrentSurfaceTexture {
+    Render(wgpu::SurfaceTexture),
+    Skip,
+    Recreate,
 }
 
 #[derive(Default)]
@@ -228,28 +236,19 @@ impl Surface {
     }
 
     /// Acquire the next surface texture.
-    pub fn acquire(&mut self, context: &Context) -> wgpu::SurfaceTexture {
+    pub fn acquire(&mut self, context: &Context) -> CurrentSurfaceTexture {
         let surface = self.surface.as_ref().unwrap();
-
         match surface.get_current_texture() {
-            Ok(frame) => frame,
-            // If we timed out, just try again
-            Err(wgpu::SurfaceError::Timeout) => surface
-                .get_current_texture()
-                .expect("Failed to acquire next surface texture!"),
-            Err(
-                // If the surface is outdated, or was lost, reconfigure it.
-                wgpu::SurfaceError::Outdated
-                | wgpu::SurfaceError::Lost
-                | wgpu::SurfaceError::Other
-                // If OutOfMemory happens, reconfiguring may not help, but we might as well try
-                | wgpu::SurfaceError::OutOfMemory,
-            ) => {
+            wgpu::CurrentSurfaceTexture::Success(texture) => CurrentSurfaceTexture::Render(texture),
+            wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => CurrentSurfaceTexture::Skip,
+            wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
                 surface.configure(&context.device, self.config.as_ref().unwrap());
-                surface
-                    .get_current_texture()
-                    .expect("Failed to acquire next surface texture!")
+                CurrentSurfaceTexture::Skip
             }
+            wgpu::CurrentSurfaceTexture::Validation => {
+                unreachable!("No error scope registered, so validation errors will panic")
+            }
+            wgpu::CurrentSurfaceTexture::Lost => CurrentSurfaceTexture::Recreate,
         }
     }
 
@@ -262,24 +261,25 @@ impl Surface {
     }
 }
 
-pub struct BufferWriter<'a, T> {
-    view: wgpu::QueueWriteBufferView<'a>,
+pub struct BufferWriter<T> {
+    view: wgpu::QueueWriteBufferView,
     offset: usize,
     _type: PhantomData<T>,
 }
 
-impl<T: Pod> BufferWriter<'_, T> {
+impl<T: Pod> BufferWriter<T> {
     pub fn is_full(&self) -> bool {
         self.offset >= self.view.len()
     }
     pub fn push(&mut self, value: T) {
         let bytes = bytemuck::bytes_of(&value);
-        let span = &mut self.view[self.offset..(self.offset + bytes.len())];
-        span.copy_from_slice(bytes);
+        self.view
+            .slice(self.offset..(self.offset + bytes.len()))
+            .copy_from_slice(bytes);
         self.offset += bytes.len();
     }
 }
-impl<T: Pod> Extend<T> for BufferWriter<'_, T> {
+impl<T: Pod> Extend<T> for BufferWriter<T> {
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         for item in iter.into_iter() {
             self.push(item);
@@ -318,7 +318,7 @@ impl<T: Pod> Buffer<T> {
         }
         context.queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(data));
     }
-    pub fn write<'a>(&'a mut self, context: &'a Context) -> BufferWriter<'a, T> {
+    pub fn write(&mut self, context: &Context) -> BufferWriter<T> {
         BufferWriter {
             view: context
                 .queue

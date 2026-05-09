@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2024"
 
 [dependencies]
-zip = "6.0"
+zip = "8.6"
 serde = "1.0"
 serde_yml = "*"
 png = "0.18"

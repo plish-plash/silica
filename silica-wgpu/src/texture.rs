@@ -38,7 +38,7 @@ impl TextureConfig {
             label: Some("silica texture sampler"),
             mag_filter: filter,
             min_filter: filter,
-            mipmap_filter: FilterMode::Nearest,
+            mipmap_filter: MipmapFilterMode::Nearest,
             ..Default::default()
         });
         TextureConfig {

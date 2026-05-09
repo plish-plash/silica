@@ -103,7 +103,7 @@ impl AssetSource for DirectorySource {
                 })
             })
             .collect();
-        entries.sort();
+        entries.sort_unstable();
         Ok(entries)
     }
 }
@@ -143,7 +143,7 @@ impl AssetSource for ArchiveSource {
                 entries.push(name.to_string());
             }
         }
-        entries.sort();
+        entries.sort_unstable();
         Ok(entries)
     }
 }

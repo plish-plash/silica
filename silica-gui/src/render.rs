@@ -106,8 +106,8 @@ impl QuadPipeline {
         });
         let pipeline_layout = context.device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&uniforms_layout, texture_config.bind_group_layout()],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&uniforms_layout), Some(texture_config.bind_group_layout())],
+            immediate_size: 0,
         });
 
         let pipeline = context.device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -135,7 +135,7 @@ impl QuadPipeline {
             },
             depth_stencil: None,
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let viewport = Viewport::new(&context.device, &uniforms_layout);

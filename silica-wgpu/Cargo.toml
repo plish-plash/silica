@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 silica-color = { path = "../silica-color" }
 log = "0.4"
-wgpu = "25.0"
+wgpu = "29.0"
 bytemuck = "1.23"
 euclid = { version = "0.22", features = ["bytemuck"] }
 pollster = "0.4"

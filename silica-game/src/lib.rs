@@ -20,12 +20,12 @@ pub use silica_gui as gui;
 pub use silica_gui::Rgba;
 use silica_gui::{Gui, Theme, theme::StandardTheme};
 pub use silica_wgpu as render;
-use silica_wgpu::{AdapterFeatures, Context, SurfaceSize, TextureConfig, wgpu};
+use silica_wgpu::{Context, SurfaceSize, TextureConfig, wgpu};
 pub use silica_window::{
-    ActiveEventLoop as EventLoop, Icon, InputEvent, KeyboardEvent, MouseButton, MouseButtonEvent, Window,
+    ActiveEventLoop, ControlFlow, EventLoop, Icon, InputEvent, KeyboardEvent, MouseButton, MouseButtonEvent, Window,
     WindowAttributes, keyboard,
 };
-use silica_window::{App, run_app, run_gui_app};
+use silica_window::{App, EventLoopExt, WindowApp, run_gui_app};
 
 pub struct LocalSpace;
 pub struct WorldSpace;
@@ -41,7 +41,7 @@ pub trait Game: Sized {
     }
     fn resize_window(&mut self, context: &Context, size: SurfaceSize);
     fn input(&mut self, event: InputEvent);
-    fn update(&mut self, event_loop: &EventLoop, dt: f32);
+    fn update(&mut self, event_loop: &ActiveEventLoop, dt: f32);
     fn clear_color(&self) -> Rgba;
     fn render(&mut self, context: &Context, pass: &mut wgpu::RenderPass);
 }
@@ -52,8 +52,7 @@ struct GameApp<T> {
 }
 
 impl<T: Game> App for GameApp<T> {
-    const RUN_CONTINUOUSLY: bool = true;
-    fn close_window(&mut self, event_loop: &EventLoop) {
+    fn close_window(&mut self, event_loop: &ActiveEventLoop) {
         if self.game.close_window() {
             event_loop.exit();
         }
@@ -61,12 +60,12 @@ impl<T: Game> App for GameApp<T> {
     fn resize_window(&mut self, context: &Context, size: SurfaceSize) {
         self.game.resize_window(context, size);
     }
-    fn input(&mut self, _event_loop: &EventLoop, _window: &Window, event: InputEvent) {
+    fn input(&mut self, _event_loop: &ActiveEventLoop, _window: &Window, event: InputEvent) {
         self.game.input(event);
     }
     fn render(
         &mut self,
-        event_loop: &EventLoop,
+        event_loop: &ActiveEventLoop,
         context: &Context,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
@@ -81,6 +80,7 @@ impl<T: Game> App for GameApp<T> {
             label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
+                depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -95,6 +95,7 @@ impl<T: Game> App for GameApp<T> {
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         self.game.render(context, &mut pass);
     }
@@ -144,17 +145,22 @@ fn error_gui(theme: Rc<dyn Theme>, error: AssetError) -> Gui {
 
 pub fn run_game<T: Game>(app_info: AppInfo) {
     silica_env::setup_env(app_info);
-    let context = Context::init(AdapterFeatures::default());
+    let event_loop = EventLoop::new().unwrap();
+    let context = event_loop.create_context_default_features();
     match T::load(&context, GameAssets::new("assets".into())) {
-        Ok(game) => run_app(
-            T::window_attributes(),
-            context,
-            GameApp {
-                game,
-                last_update: Instant::now(),
-            },
-        ),
-        Err(error) => run_gui_app(T::window_attributes(), context, "assets/theme", |theme| {
+        Ok(game) => {
+            let mut window_app = WindowApp::new(
+                context,
+                T::window_attributes(),
+                GameApp {
+                    game,
+                    last_update: Instant::now(),
+                },
+            );
+            event_loop.set_control_flow(ControlFlow::Poll);
+            event_loop.run_app(&mut window_app)
+        }
+        Err(error) => run_gui_app(event_loop, context, T::window_attributes(), "assets/theme", |theme| {
             error_gui(theme, error)
         }),
     }

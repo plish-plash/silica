@@ -121,13 +121,7 @@ impl Label {
         let mut font_system_inner = font_system.borrow_mut();
         let mut buffer = Buffer::new(&mut font_system_inner, metrics);
         if !text.is_empty() {
-            buffer.set_rich_text(
-                &mut font_system_inner,
-                [(text, attrs.clone())],
-                &attrs,
-                Shaping::Advanced,
-                align,
-            );
+            buffer.set_text(&mut font_system_inner, text, &attrs, Shaping::Advanced, align);
         }
         Label {
             font_system: font_system.clone(),
@@ -152,9 +146,9 @@ impl Label {
     }
 
     pub fn set_text(&mut self, text: &str) {
-        self.buffer.set_rich_text(
+        self.buffer.set_text(
             &mut self.font_system.borrow_mut(),
-            [(text, self.attrs.clone())],
+            text,
             &self.attrs,
             Shaping::Advanced,
             self.align,
@@ -162,9 +156,9 @@ impl Label {
     }
     pub fn set_text_and_color(&mut self, text: &str, color: Option<Rgba>) {
         self.attrs.color_opt = color.map(|color| glyphon::Color(color.to_u32()));
-        self.buffer.set_rich_text(
+        self.buffer.set_text(
             &mut self.font_system.borrow_mut(),
-            [(text, self.attrs.clone())],
+            text,
             &self.attrs,
             Shaping::Advanced,
             self.align,

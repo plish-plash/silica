@@ -3,18 +3,16 @@ mod gui;
 use std::sync::Arc;
 
 use silica_gui::{Hotkey, Point};
-use silica_wgpu::{Context, Surface, SurfaceSize, wgpu};
+use silica_wgpu::{AdapterFeatures, Context, CurrentSurfaceTexture, Surface, SurfaceSize, wgpu};
 use winit::{
     application::ApplicationHandler,
-    error::EventLoopError,
     event::{ElementState, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
     keyboard::{KeyCode, ModifiersState, PhysicalKey, SmolStr},
     window::WindowId,
 };
 pub use winit::{
     event::MouseButton,
-    event_loop::ActiveEventLoop,
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard,
     window::{Icon, Window, WindowAttributes},
 };
@@ -69,7 +67,6 @@ impl silica_gui::MouseButtonEvent for MouseButtonEvent {
 pub type InputEvent = silica_gui::InputEvent<KeyboardEvent, MouseButtonEvent>;
 
 pub trait App {
-    const RUN_CONTINUOUSLY: bool;
     fn close_window(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.exit();
     }
@@ -84,7 +81,7 @@ pub trait App {
     );
 }
 
-struct WindowApp<T> {
+pub struct WindowApp<T> {
     window_attributes: WindowAttributes,
     window: Option<Arc<Window>>,
     context: Context,
@@ -94,8 +91,31 @@ struct WindowApp<T> {
 }
 
 impl<T: App> WindowApp<T> {
+    pub fn new(context: Context, window_attributes: WindowAttributes, app: T) -> Self {
+        WindowApp {
+            window_attributes,
+            window: None,
+            context,
+            surface: Surface::new(),
+            modifiers: ModifiersState::empty(),
+            app,
+        }
+    }
     fn render(&mut self, event_loop: &ActiveEventLoop) {
-        let frame = self.surface.acquire(&self.context);
+        let window = self.window.as_ref().unwrap();
+        let frame = match self.surface.acquire(&self.context) {
+            CurrentSurfaceTexture::Render(frame) => frame,
+            CurrentSurfaceTexture::Skip => return,
+            CurrentSurfaceTexture::Recreate => {
+                let size = window.inner_size();
+                self.surface.resume(
+                    &mut self.context,
+                    window.clone(),
+                    SurfaceSize::new(size.width, size.height),
+                );
+                return;
+            }
+        };
         let view: wgpu::TextureView = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .context
@@ -103,7 +123,7 @@ impl<T: App> WindowApp<T> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         self.app.render(event_loop, &self.context, &view, &mut encoder);
         self.context.queue.submit([encoder.finish()]);
-        self.window.as_ref().unwrap().pre_present_notify();
+        window.pre_present_notify();
         frame.present();
     }
 }
@@ -135,7 +155,7 @@ impl<T: App> ApplicationHandler for WindowApp<T> {
             }
             WindowEvent::RedrawRequested => {
                 self.render(event_loop);
-                if T::RUN_CONTINUOUSLY && !event_loop.exiting() {
+                if event_loop.control_flow() == ControlFlow::Poll && !event_loop.exiting() {
                     self.window.as_ref().unwrap().request_redraw();
                 }
             }
@@ -181,21 +201,16 @@ impl<T: App> ApplicationHandler for WindowApp<T> {
     }
 }
 
-pub fn run_app<T: App>(window_attributes: WindowAttributes, context: Context, app: T) -> Result<(), EventLoopError> {
-    let event_loop = EventLoop::new()?;
-    event_loop.set_control_flow(if T::RUN_CONTINUOUSLY {
-        ControlFlow::Poll
-    } else {
-        ControlFlow::Wait
-    });
-    let mut window_app = WindowApp {
-        window_attributes,
-        window: None,
-        context,
-        surface: Surface::new(),
-        modifiers: ModifiersState::empty(),
-        app,
-    };
-    event_loop.run_app(&mut window_app)?;
-    Ok(())
+pub trait EventLoopExt {
+    fn create_context(&self, features: AdapterFeatures) -> Context;
+    fn create_context_default_features(&self) -> Context;
+}
+
+impl EventLoopExt for EventLoop<()> {
+    fn create_context(&self, features: AdapterFeatures) -> Context {
+        Context::init(Box::new(self.owned_display_handle()), features)
+    }
+    fn create_context_default_features(&self) -> Context {
+        self.create_context(AdapterFeatures::default())
+    }
 }

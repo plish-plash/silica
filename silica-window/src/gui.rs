@@ -9,11 +9,11 @@ use silica_gui::{
 use silica_wgpu::{Context, SurfaceSize, TextureConfig, wgpu};
 use winit::{
     error::EventLoopError,
-    event_loop::ActiveEventLoop,
+    event_loop::{ActiveEventLoop, EventLoop},
     window::{Window, WindowAttributes},
 };
 
-use crate::{App, InputEvent, run_app};
+use crate::{App, InputEvent, WindowApp};
 
 struct GuiApp {
     gui: Gui,
@@ -22,7 +22,6 @@ struct GuiApp {
 }
 
 impl App for GuiApp {
-    const RUN_CONTINUOUSLY: bool = false;
     fn resize_window(&mut self, context: &Context, size: SurfaceSize) {
         self.gui.set_area(Rect::new(Point::origin(), size.to_i32().cast_unit()));
         let resources = self
@@ -53,6 +52,7 @@ impl App for GuiApp {
             label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
+                depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -67,14 +67,16 @@ impl App for GuiApp {
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         self.gui.render(context, &mut pass, resources);
     }
 }
 
 pub fn run_gui_app<F>(
-    window_attributes: WindowAttributes,
+    event_loop: EventLoop<()>,
     context: Context,
+    window_attributes: WindowAttributes,
     theme: &str,
     f: F,
 ) -> Result<(), EventLoopError>
@@ -87,13 +89,14 @@ where
         Err(error) => panic!("{}", error),
     };
     let gui = f(Rc::new(theme));
-    run_app(
-        window_attributes,
+    let mut window_app = WindowApp::new(
         context,
+        window_attributes,
         GuiApp {
             gui,
             texture_config,
             resources: None,
         },
-    )
+    );
+    event_loop.run_app(&mut window_app)
 }
