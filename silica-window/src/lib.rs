@@ -81,11 +81,12 @@ pub trait App {
     );
 }
 
+// Drop order matters here, the program may crash on exit if Window is dropped before Surface.
 pub struct WindowApp<T> {
-    window_attributes: WindowAttributes,
-    window: Option<Arc<Window>>,
-    context: Context,
     surface: Surface,
+    window: Option<Arc<Window>>,
+    window_attributes: WindowAttributes,
+    context: Context,
     modifiers: ModifiersState,
     app: T,
 }
@@ -93,10 +94,10 @@ pub struct WindowApp<T> {
 impl<T: App> WindowApp<T> {
     pub fn new(context: Context, window_attributes: WindowAttributes, app: T) -> Self {
         WindowApp {
-            window_attributes,
-            window: None,
-            context,
             surface: Surface::new(),
+            window: None,
+            window_attributes,
+            context,
             modifiers: ModifiersState::empty(),
             app,
         }

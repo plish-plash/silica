@@ -164,7 +164,7 @@ pub fn run_game<T: Game>(app_info: AppInfo) {
             error_gui(theme, error)
         }),
     }
-    .unwrap()
+    .unwrap();
 }
 
 pub fn load_gui_theme(

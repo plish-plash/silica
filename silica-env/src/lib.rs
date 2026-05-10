@@ -64,11 +64,11 @@ pub fn setup_logger(app_info: &AppInfo) {
         } else {
             log::LevelFilter::Info
         })
-        .filter_module("calloop", log::LevelFilter::Info)
-        .filter_module("wgpu_core", log::LevelFilter::Info)
-        .filter_module("wgpu_hal", log::LevelFilter::Warn)
+        .filter_module("wgpu_core", log::LevelFilter::Debug)
+        .filter_module("wgpu_hal", log::LevelFilter::Info)
         .filter_module("naga", log::LevelFilter::Info)
         .filter_module("cosmic_text", log::LevelFilter::Info)
+        .filter_module("symphonia_core", log::LevelFilter::Info)
         .parse_default_env()
         .init();
 
