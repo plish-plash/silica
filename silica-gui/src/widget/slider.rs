@@ -14,7 +14,7 @@ pub struct Slider {
 
 impl Slider {
     const MIN_SIZE: Size = Size::new(32, 32);
-    fn scrollbar_style() -> Style {
+    fn style() -> Style {
         Style {
             background_color: Some(Color::Gutter),
             min_size: Self::MIN_SIZE,
@@ -47,6 +47,15 @@ impl Slider {
             on_changed: EventFn::new_param(on_changed),
         }
     }
+    pub fn create<C, F>(gui: &mut Gui, vertical: bool, on_changed: F) -> WidgetId<Self>
+    where
+        C: 'static,
+        F: Fn(&mut C, f32) + 'static,
+    {
+        let slider = Self::new(vertical, on_changed);
+        gui.create_widget(Self::style(), slider)
+    }
+
     fn handle_size(&self, area: &Area) -> i32 {
         if self.vertical {
             let scroll_size = self
@@ -65,6 +74,13 @@ impl Slider {
                 .min(1.0);
             ((scroll_size * (area.content_rect.size.width as f32)) as i32).max(32)
         }
+    }
+
+    pub fn value(&self) -> f32 {
+        self.value
+    }
+    pub fn set_value(&mut self, value: f32) {
+        self.value = value;
     }
 }
 impl Widget for Slider {
@@ -110,6 +126,16 @@ impl Widget for Slider {
         renderer
             .theme()
             .draw_button(renderer, handle_rect, ButtonStyle::Normal, false, self.state);
+    }
+}
+impl WidgetId<Slider> {
+    pub fn value(&self, gui: &Gui) -> f32 {
+        gui.get_widget(*self).map(|slider| slider.value()).unwrap_or(0.0)
+    }
+    pub fn set_value(&self, gui: &mut Gui, value: f32) {
+        if let Some(slider) = gui.get_widget_mut(*self) {
+            slider.set_value(value);
+        }
     }
 }
 
@@ -202,7 +228,7 @@ impl ScrollAreaBuilder {
         let scrollbar = Slider::new_scrollbar(false, Some(self.size.clone()), move |gui, value| {
             area.set_scroll(gui, value, false);
         });
-        self.horizontal_scrollbar = Some(gui.create_widget(Slider::scrollbar_style(), scrollbar));
+        self.horizontal_scrollbar = Some(gui.create_widget(Slider::style(), scrollbar));
         self
     }
     pub fn vertical_scroll(mut self, gui: &mut Gui) -> Self {
@@ -210,7 +236,7 @@ impl ScrollAreaBuilder {
         let scrollbar = Slider::new_scrollbar(true, Some(self.size.clone()), move |gui, value| {
             area.set_scroll(gui, value, true);
         });
-        self.vertical_scrollbar = Some(gui.create_widget(Slider::scrollbar_style(), scrollbar));
+        self.vertical_scrollbar = Some(gui.create_widget(Slider::style(), scrollbar));
         self
     }
     pub fn build(self, gui: &mut Gui) -> NodeId {

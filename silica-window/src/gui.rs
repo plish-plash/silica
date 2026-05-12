@@ -1,52 +1,50 @@
-use std::rc::Rc;
+use std::{path::PathBuf, rc::Rc, sync::Arc};
 
 use silica_asset::DirectorySource;
-use silica_gui::{
-    Gui, Point, Rect,
-    render::GuiResources,
-    theme::{StandardTheme, Theme},
-};
+use silica_gui::{Gui, NodeId, Point, Rect, render::GuiResources, theme::StandardTheme};
 use silica_wgpu::{Context, SurfaceSize, TextureConfig, wgpu};
-use winit::{
-    error::EventLoopError,
-    event_loop::{ActiveEventLoop, EventLoop},
-    window::{Window, WindowAttributes},
-};
+use winit::window::{Window, WindowAttributes};
 
-use crate::{App, InputEvent, WindowApp};
+use crate::{App, AppRequest, InputEvent};
 
-struct GuiApp {
+pub struct GuiApp {
     gui: Gui,
-    texture_config: TextureConfig,
-    resources: Option<GuiResources>,
+    resources: GuiResources,
 }
 
 impl App for GuiApp {
+    type Param = (PathBuf, Box<dyn FnOnce(&mut Gui) -> NodeId>);
+    fn start(_window: Arc<Window>, context: &Context, (theme, build_gui): Self::Param) -> Self {
+        let texture_config = TextureConfig::new(context, wgpu::FilterMode::Linear);
+        let resources = GuiResources::new(context, &texture_config);
+        let theme = StandardTheme::load(context, &texture_config, &mut DirectorySource::new(theme)).unwrap();
+        let mut gui = Gui::new(Rc::new(theme));
+        let root = build_gui(&mut gui);
+        gui.set_root(root);
+        GuiApp { gui, resources }
+    }
     fn resize_window(&mut self, context: &Context, size: SurfaceSize) {
         self.gui.set_area(Rect::new(Point::origin(), size.to_i32().cast_unit()));
-        let resources = self
-            .resources
-            .get_or_insert_with(|| GuiResources::new(context, &self.texture_config));
-        resources.surface_resize(context, size);
+        self.resources.surface_resize(context, size);
     }
-    fn input(&mut self, event_loop: &ActiveEventLoop, window: &Window, event: InputEvent) {
+    fn input(&mut self, event: InputEvent) -> AppRequest {
         let (executor, _) = self.gui.handle_input(event);
         let redraw = executor.needs_redraw();
         executor.execute(&mut self.gui);
         if self.gui.exit_requested() {
-            event_loop.exit();
+            AppRequest::Exit
         } else if redraw || self.gui.needs_layout() {
-            window.request_redraw();
+            AppRequest::Redraw
+        } else {
+            AppRequest::None
         }
     }
     fn render(
         &mut self,
-        _event_loop: &ActiveEventLoop,
         context: &Context,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
-    ) {
-        let resources = self.resources.as_mut().unwrap();
+    ) -> AppRequest {
         let background_color = self.gui.background_color();
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
@@ -69,34 +67,14 @@ impl App for GuiApp {
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        self.gui.render(context, &mut pass, resources);
+        self.gui.render(context, &mut pass, &mut self.resources);
+        AppRequest::None
     }
 }
 
-pub fn run_gui_app<F>(
-    event_loop: EventLoop<()>,
-    context: Context,
-    window_attributes: WindowAttributes,
-    theme: &str,
-    f: F,
-) -> Result<(), EventLoopError>
+pub fn run_gui_app<F>(window_attributes: WindowAttributes, theme: &str, f: F)
 where
-    F: FnOnce(Rc<dyn Theme>) -> Gui,
+    F: FnOnce(&mut Gui) -> NodeId + 'static,
 {
-    let texture_config = TextureConfig::new(&context, wgpu::FilterMode::Linear);
-    let theme = match StandardTheme::load(&context, &texture_config, &mut DirectorySource::new(theme.into())) {
-        Ok(theme) => theme,
-        Err(error) => panic!("{}", error),
-    };
-    let gui = f(Rc::new(theme));
-    let mut window_app = WindowApp::new(
-        context,
-        window_attributes,
-        GuiApp {
-            gui,
-            texture_config,
-            resources: None,
-        },
-    );
-    event_loop.run_app(&mut window_app)
+    crate::run_app::<GuiApp>(window_attributes, (theme.into(), Box::new(f)));
 }

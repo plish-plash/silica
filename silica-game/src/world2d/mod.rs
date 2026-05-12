@@ -75,7 +75,7 @@ pub struct Pipeline2D {
 impl Pipeline2D {
     pub fn new(context: &Context, texture_config: &TextureConfig) -> Self {
         use wgpu::*;
-        let device = &context.device;
+        let device = context.device();
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("world2d shader"),
             source: ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -136,7 +136,7 @@ impl Pipeline2D {
                 entry_point: Some("fs_main"),
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState {
-                    format: context.surface_format.expect("surface not created"),
+                    format: context.surface_format(),
                     blend: Some(BlendState::ALPHA_BLENDING),
                     write_mask: ColorWrites::default(),
                 })],
@@ -164,7 +164,7 @@ impl Pipeline2D {
             screen_resolution: size.to_f32().to_array(),
         };
         context
-            .queue
+            .queue()
             .write_buffer(&self.uniforms_buffer, 0, bytemuck::bytes_of(&uniforms));
     }
 }

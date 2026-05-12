@@ -8,6 +8,7 @@ pub mod world2d;
 use std::{
     io::{Error as IoError, ErrorKind},
     rc::Rc,
+    sync::Arc,
     time::Instant,
 };
 
@@ -21,11 +22,10 @@ pub use silica_gui::Rgba;
 use silica_gui::{Gui, Theme, theme::StandardTheme};
 pub use silica_wgpu as render;
 use silica_wgpu::{Context, SurfaceSize, TextureConfig, wgpu};
+use silica_window::{App, AppRequest, GuiApp, run_app};
 pub use silica_window::{
-    ActiveEventLoop, ControlFlow, EventLoop, Icon, InputEvent, KeyboardEvent, MouseButton, MouseButtonEvent, Window,
-    WindowAttributes, keyboard,
+    Icon, InputEvent, KeyboardEvent, MouseButton, MouseButtonEvent, Window, WindowAttributes, keyboard,
 };
-use silica_window::{App, EventLoopExt, WindowApp, run_gui_app};
 
 pub struct LocalSpace;
 pub struct WorldSpace;
@@ -33,80 +33,127 @@ pub struct ScreenSpace;
 
 pub type GameAssets = silica_asset::DirectorySource;
 
+#[derive(Debug, Clone, Copy)]
+pub enum GameLoop {
+    Run,
+    Exit,
+}
+
+impl GameLoop {
+    fn to_app_request(self) -> AppRequest {
+        match self {
+            GameLoop::Run => AppRequest::Redraw,
+            GameLoop::Exit => AppRequest::Exit,
+        }
+    }
+}
+
 pub trait Game: Sized {
     fn window_attributes() -> WindowAttributes;
-    fn load(context: &Context, assets: GameAssets) -> Result<Self, AssetError>;
+    fn load(window: Arc<Window>, context: &Context, assets: GameAssets) -> Result<Self, AssetError>;
     fn close_window(&mut self) -> bool {
         true
     }
     fn resize_window(&mut self, context: &Context, size: SurfaceSize);
     fn input(&mut self, event: InputEvent);
-    fn update(&mut self, event_loop: &ActiveEventLoop, dt: f32);
-    fn clear_color(&self) -> Rgba;
+    fn update(&mut self, dt: f32) -> GameLoop;
+    fn clear_color(&self) -> Option<Rgba>;
     fn render(&mut self, context: &Context, pass: &mut wgpu::RenderPass);
 }
 
 struct GameApp<T> {
-    game: T,
+    game: Result<T, GuiApp>,
     last_update: Instant,
 }
 
 impl<T: Game> App for GameApp<T> {
-    fn close_window(&mut self, event_loop: &ActiveEventLoop) {
-        if self.game.close_window() {
-            event_loop.exit();
+    type Param = ();
+    fn start(window: Arc<Window>, context: &Context, _param: Self::Param) -> Self {
+        let game = T::load(window.clone(), context, GameAssets::new("assets".into())).map_err(|error| {
+            GuiApp::start(
+                window,
+                context,
+                ("assets/theme".into(), Box::new(move |gui| error_gui(gui, error))),
+            )
+        });
+        GameApp {
+            game,
+            last_update: Instant::now(),
+        }
+    }
+    fn close_window(&mut self) -> bool {
+        match &mut self.game {
+            Ok(game) => game.close_window(),
+            Err(gui) => gui.close_window(),
         }
     }
     fn resize_window(&mut self, context: &Context, size: SurfaceSize) {
-        self.game.resize_window(context, size);
+        match &mut self.game {
+            Ok(game) => game.resize_window(context, size),
+            Err(gui) => gui.resize_window(context, size),
+        }
     }
-    fn input(&mut self, _event_loop: &ActiveEventLoop, _window: &Window, event: InputEvent) {
-        self.game.input(event);
+    fn input(&mut self, event: InputEvent) -> AppRequest {
+        match &mut self.game {
+            Ok(game) => {
+                game.input(event);
+                AppRequest::None
+            }
+            Err(gui) => gui.input(event),
+        }
     }
     fn render(
         &mut self,
-        event_loop: &ActiveEventLoop,
         context: &Context,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
-    ) {
-        let now = Instant::now();
-        let dt = (now - self.last_update).as_secs_f32();
-        self.last_update = now;
-        self.game.update(event_loop, dt);
+    ) -> AppRequest {
+        match &mut self.game {
+            Ok(game) => {
+                let now = Instant::now();
+                let dt = (now - self.last_update).as_secs_f32();
+                self.last_update = now;
+                let game_loop = game.update(dt);
 
-        let clear_color = self.game.clear_color();
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: None,
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                let load_op = if let Some(clear_color) = game.clear_color() {
+                    wgpu::LoadOp::Clear(wgpu::Color {
                         r: clear_color.r as f64,
                         g: clear_color.g as f64,
                         b: clear_color.b as f64,
                         a: 1.0,
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        self.game.render(context, &mut pass);
+                    })
+                } else {
+                    wgpu::LoadOp::DontCare(wgpu::LoadOpDontCare::default())
+                };
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: load_op,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                game.render(context, &mut pass);
+                game_loop.to_app_request()
+            }
+            Err(gui) => gui.render(context, view, encoder),
+        }
     }
 }
 
-fn error_gui(theme: Rc<dyn Theme>, error: AssetError) -> Gui {
+fn error_gui(gui: &mut Gui, error: AssetError) -> gui::NodeId {
     use gui::*;
     let error = error.to_string();
     log::error!("{error}");
-    let mut gui = Gui::new(theme);
-    let root = NodeBuilder::new()
+    NodeBuilder::new()
         .modify_style(|style| {
             style.layout = Layout::Stack;
             style.main_align = Align::Center;
@@ -125,46 +172,25 @@ fn error_gui(theme: Rc<dyn Theme>, error: AssetError) -> Gui {
                     let label = LabelBuilder::new(&error)
                         .font_size(20.0)
                         .align(TextAlign::Center)
-                        .build_label(&gui);
+                        .build_label(gui);
                     NodeBuilder::new()
                         .modify_style(|style| style.max_size.width = 480)
-                        .build_widget(&mut gui, label)
+                        .build_widget(gui, label)
                 })
                 .child(
                     ButtonBuilder::new()
-                        .label(&mut gui, "Exit")
+                        .label(gui, "Exit")
                         .button_style(ButtonStyle::Delete)
-                        .build(&mut gui, |gui: &mut Gui| gui.request_exit()),
+                        .build(gui, |gui: &mut Gui| gui.request_exit()),
                 )
-                .build(&mut gui),
+                .build(gui),
         )
-        .build(&mut gui);
-    gui.set_root(root);
-    gui
+        .build(gui)
 }
 
 pub fn run_game<T: Game>(app_info: AppInfo) {
     silica_env::setup_env(app_info);
-    let event_loop = EventLoop::new().unwrap();
-    let context = event_loop.create_context_default_features();
-    match T::load(&context, GameAssets::new("assets".into())) {
-        Ok(game) => {
-            let mut window_app = WindowApp::new(
-                context,
-                T::window_attributes(),
-                GameApp {
-                    game,
-                    last_update: Instant::now(),
-                },
-            );
-            event_loop.set_control_flow(ControlFlow::Poll);
-            event_loop.run_app(&mut window_app)
-        }
-        Err(error) => run_gui_app(event_loop, context, T::window_attributes(), "assets/theme", |theme| {
-            error_gui(theme, error)
-        }),
-    }
-    .unwrap();
+    run_app::<GameApp<T>>(T::window_attributes(), ());
 }
 
 pub fn load_gui_theme(

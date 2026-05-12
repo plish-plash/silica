@@ -80,8 +80,9 @@ struct QuadPipeline {
 impl QuadPipeline {
     fn new(context: &Context, texture_config: &TextureConfig) -> Self {
         use wgpu::*;
+        let device = context.device();
 
-        let shader = context.device.create_shader_module(ShaderModuleDescriptor {
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("silica shader"),
             source: ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
@@ -91,7 +92,7 @@ impl QuadPipeline {
             step_mode: VertexStepMode::Instance,
             attributes: &vertex_attr_array![0 => Sint32x4, 1 => Float32x4, 2 => Float32x4],
         };
-        let uniforms_layout = context.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        let uniforms_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("silica uniforms bind group layout"),
             entries: &[BindGroupLayoutEntry {
                 binding: 0,
@@ -104,13 +105,13 @@ impl QuadPipeline {
                 count: None,
             }],
         });
-        let pipeline_layout = context.device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts: &[Some(&uniforms_layout), Some(texture_config.bind_group_layout())],
             immediate_size: 0,
         });
 
-        let pipeline = context.device.create_render_pipeline(&RenderPipelineDescriptor {
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
             label: Some("silica pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
@@ -123,7 +124,7 @@ impl QuadPipeline {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(ColorTargetState {
-                    format: context.surface_format.expect("surface not created"),
+                    format: context.surface_format(),
                     blend: Some(BlendState::ALPHA_BLENDING),
                     write_mask: ColorWrites::default(),
                 })],
@@ -138,12 +139,12 @@ impl QuadPipeline {
             multiview_mask: None,
             cache: None,
         });
-        let viewport = Viewport::new(&context.device, &uniforms_layout);
+        let viewport = Viewport::new(device, &uniforms_layout);
 
         QuadPipeline { pipeline, viewport }
     }
     fn surface_resize(&mut self, context: &Context, size: SurfaceSize) {
-        self.viewport.update(&context.queue, size);
+        self.viewport.update(context.queue(), size);
     }
 }
 impl BatcherPipeline for QuadPipeline {
@@ -171,15 +172,15 @@ pub struct TextResources {
 impl TextResources {
     fn new(context: &Context) -> Self {
         let swash_cache = glyphon::SwashCache::new();
-        let cache = glyphon::Cache::new(&context.device);
+        let cache = glyphon::Cache::new(context.device());
         let atlas = glyphon::TextAtlas::with_color_mode(
-            &context.device,
-            &context.queue,
+            context.device(),
+            context.queue(),
             &cache,
-            context.surface_format.expect("surface not created"),
+            context.surface_format(),
             glyphon::ColorMode::Web,
         );
-        let viewport = glyphon::Viewport::new(&context.device, &cache);
+        let viewport = glyphon::Viewport::new(context.device(), &cache);
         TextResources {
             swash_cache,
             atlas,
@@ -188,7 +189,7 @@ impl TextResources {
     }
     fn surface_resize(&mut self, context: &Context, size: SurfaceSize) {
         self.viewport.update(
-            &context.queue,
+            context.queue(),
             glyphon::Resolution {
                 width: size.width,
                 height: size.height,
@@ -268,7 +269,7 @@ impl GuiRenderer<'_, '_> {
     pub fn create_text_renderer(&mut self) -> TextRenderer {
         TextRenderer::new(
             &mut self.resources.text_resources.atlas,
-            &self.context.device,
+            self.context.device(),
             wgpu::MultisampleState::default(),
             None,
         )
@@ -282,8 +283,8 @@ impl GuiRenderer<'_, '_> {
         let offset = self.scroll_offset();
         text_renderer
             .prepare(
-                &self.context.device,
-                &self.context.queue,
+                self.context.device(),
+                self.context.queue(),
                 &mut font_system.borrow_mut(),
                 &mut self.resources.text_resources.atlas,
                 &self.resources.text_resources.viewport,

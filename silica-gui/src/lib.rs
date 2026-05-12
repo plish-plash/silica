@@ -179,9 +179,14 @@ impl FontSystem {
             db,
         ))))
     }
-    pub fn with_font_asset<S: AssetSource>(asset_source: &mut S, path: &str) -> Result<Self, AssetError> {
+    pub fn with_font_assets<'a, S: AssetSource>(
+        asset_source: &mut S,
+        paths: impl IntoIterator<Item = &'a str>,
+    ) -> Result<Self, AssetError> {
         let mut db = glyphon::fontdb::Database::new();
-        db.load_font_data(silica_asset::load_bytes(asset_source, path)?);
+        for path in paths {
+            db.load_font_data(silica_asset::load_bytes(asset_source, path)?);
+        }
         Ok(Self::new(db))
     }
     pub fn borrow_mut(&self) -> std::cell::RefMut<'_, glyphon::FontSystem> {

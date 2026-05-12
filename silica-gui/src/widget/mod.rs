@@ -56,3 +56,35 @@ impl NodeBuilder {
         widget
     }
 }
+
+pub struct Separator(Color);
+
+impl Separator {
+    pub fn new(color: Color) -> Self {
+        Separator(color)
+    }
+    pub fn create(gui: &mut Gui) -> WidgetId<Self> {
+        gui.create_widget(
+            Style {
+                min_size: Size::splat(1),
+                ..Default::default()
+            },
+            Self::default(),
+        )
+    }
+}
+impl Default for Separator {
+    fn default() -> Self {
+        Separator(Color::Foreground)
+    }
+}
+impl Widget for Separator {
+    fn draw(&mut self, renderer: &mut GuiRenderer, area: &Area) {
+        let color = renderer.theme().color(self.0);
+        renderer.draw_theme_quad(render::Quad {
+            rect: area.content_rect.to_box2d(),
+            uv: GuiRenderer::UV_WHITE,
+            color,
+        });
+    }
+}

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use silica_game::{
     keyboard::KeyCode,
     render::{Batcher, Context, SurfaceSize, Texture, TextureConfig, Uv, wgpu},
@@ -58,7 +60,7 @@ impl Game for WasdGame {
     fn window_attributes() -> WindowAttributes {
         Window::default_attributes().with_title("WASD Example")
     }
-    fn load(context: &Context, mut assets: GameAssets) -> Result<Self, AssetError> {
+    fn load(_window: Arc<Window>, context: &Context, mut assets: GameAssets) -> Result<Self, AssetError> {
         let texture_config = TextureConfig::new(context, wgpu::FilterMode::Linear);
         let player_texture = Image::load_texture(context, &texture_config, &mut assets, "player.png")?;
         Ok(WasdGame {
@@ -77,12 +79,13 @@ impl Game for WasdGame {
     fn input(&mut self, event: InputEvent) {
         self.input.handle_input(&event);
     }
-    fn update(&mut self, _event_loop: &EventLoop, dt: f32) {
+    fn update(&mut self, dt: f32) -> GameLoop {
         const PLAYER_SPEED: f32 = 200.0;
         self.player_point += self.input.movement() * PLAYER_SPEED * dt;
+        GameLoop::Run
     }
-    fn clear_color(&self) -> Rgba {
-        Rgba::BLACK
+    fn clear_color(&self) -> Option<Rgba> {
+        Some(Rgba::BLACK)
     }
     fn render(&mut self, context: &Context, pass: &mut wgpu::RenderPass) {
         let pipeline = self

@@ -10,6 +10,7 @@ pub enum ButtonStyle {
     Delete,
     Flat,
     Tab,
+    Checkbox,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,12 +245,26 @@ impl Button {
     {
         ButtonBuilder::new().label(gui, label).build(gui, on_clicked)
     }
-    pub fn create_toggle<C, F>(gui: &mut Gui, label: &str, on_clicked: F) -> WidgetId<Self>
+    pub fn create_toggle<C, F>(gui: &mut Gui, label: &str, toggled: bool, on_clicked: F) -> WidgetId<Self>
     where
         C: 'static,
         F: Fn(&mut C, bool) + 'static,
     {
-        ButtonBuilder::new().label(gui, label).build_toggle(gui, on_clicked)
+        ButtonBuilder::new()
+            .label(gui, label)
+            .toggled(toggled)
+            .build_toggle(gui, on_clicked)
+    }
+    pub fn create_checkbox<C, F>(gui: &mut Gui, toggled: bool, on_clicked: F) -> WidgetId<Self>
+    where
+        C: 'static,
+        F: Fn(&mut C, bool) + 'static,
+    {
+        ButtonBuilder::new()
+            .modify_style(|style| style.min_size = Size::splat(Self::MIN_SIZE.height))
+            .button_style(ButtonStyle::Checkbox)
+            .toggled(toggled)
+            .build_toggle(gui, on_clicked)
     }
 
     pub fn enabled(&self) -> bool {

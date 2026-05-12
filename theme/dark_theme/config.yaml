@@ -1,4 +1,4 @@
-font: Rubik-Light.ttf
+fonts: [Rubik-Light.ttf]
 texture: theme.png
 palette:
   background_color: "#181818"
@@ -42,3 +42,5 @@ tab:
 tab_active:
   rect: { min: [16, 32], max: [32, 48] }
   insets: { top: 9, right: 7, bottom: 5, left: 7, _unit: null }
+checkmark:
+  rect: { min: [48, 0], max: [64, 16] }

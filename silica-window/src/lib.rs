@@ -3,16 +3,17 @@ mod gui;
 use std::sync::Arc;
 
 use silica_gui::{Hotkey, Point};
-use silica_wgpu::{AdapterFeatures, Context, CurrentSurfaceTexture, Surface, SurfaceSize, wgpu};
+use silica_wgpu::{Context, SurfaceSize, wgpu};
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, WindowEvent},
+    event_loop::EventLoop,
     keyboard::{KeyCode, ModifiersState, PhysicalKey, SmolStr},
     window::WindowId,
 };
 pub use winit::{
     event::MouseButton,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    event_loop::ActiveEventLoop,
     keyboard,
     window::{Icon, Window, WindowAttributes},
 };
@@ -66,113 +67,112 @@ impl silica_gui::MouseButtonEvent for MouseButtonEvent {
 
 pub type InputEvent = silica_gui::InputEvent<KeyboardEvent, MouseButtonEvent>;
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum AppRequest {
+    #[default]
+    None,
+    Redraw,
+    Exit,
+}
+
 pub trait App {
-    fn close_window(&mut self, event_loop: &ActiveEventLoop) {
-        event_loop.exit();
+    type Param;
+    fn start(window: Arc<Window>, context: &Context, param: Self::Param) -> Self;
+    fn close_window(&mut self) -> bool {
+        true
     }
     fn resize_window(&mut self, context: &Context, size: SurfaceSize);
-    fn input(&mut self, event_loop: &ActiveEventLoop, window: &Window, event: InputEvent);
-    fn render(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        context: &Context,
-        view: &wgpu::TextureView,
-        encoder: &mut wgpu::CommandEncoder,
-    );
+    fn input(&mut self, event: InputEvent) -> AppRequest;
+    fn render(&mut self, context: &Context, view: &wgpu::TextureView, encoder: &mut wgpu::CommandEncoder)
+    -> AppRequest;
 }
 
 // Drop order matters here, the program may crash on exit if Window is dropped before Surface.
-pub struct WindowApp<T> {
-    surface: Surface,
-    window: Option<Arc<Window>>,
-    window_attributes: WindowAttributes,
-    context: Context,
-    modifiers: ModifiersState,
+struct AppWindow<T> {
     app: T,
+    context: Context,
+    window: Arc<Window>,
 }
 
-impl<T: App> WindowApp<T> {
-    pub fn new(context: Context, window_attributes: WindowAttributes, app: T) -> Self {
-        WindowApp {
-            surface: Surface::new(),
-            window: None,
-            window_attributes,
-            context,
-            modifiers: ModifiersState::empty(),
-            app,
-        }
-    }
-    fn render(&mut self, event_loop: &ActiveEventLoop) {
-        let window = self.window.as_ref().unwrap();
-        let frame = match self.surface.acquire(&self.context) {
-            CurrentSurfaceTexture::Render(frame) => frame,
-            CurrentSurfaceTexture::Skip => return,
-            CurrentSurfaceTexture::Recreate => {
-                let size = window.inner_size();
-                self.surface.resume(
-                    &mut self.context,
-                    window.clone(),
-                    SurfaceSize::new(size.width, size.height),
-                );
-                return;
-            }
+impl<T: App> AppWindow<T> {
+    fn render(&mut self) -> AppRequest {
+        let frame = if let Some(frame) = self.context.get_surface_texture(&self.window) {
+            frame
+        } else {
+            return AppRequest::Redraw;
         };
         let view: wgpu::TextureView = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .context
-            .device
+            .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        self.app.render(event_loop, &self.context, &view, &mut encoder);
-        self.context.queue.submit([encoder.finish()]);
-        window.pre_present_notify();
+        let request = self.app.render(&self.context, &view, &mut encoder);
+        self.context.queue().submit([encoder.finish()]);
+        self.window.pre_present_notify();
         frame.present();
+        request
     }
 }
 
-impl<T: App> ApplicationHandler for WindowApp<T> {
+struct AppContainer<T: App> {
+    param: Option<T::Param>,
+    window: Option<AppWindow<T>>,
+    window_attributes: WindowAttributes,
+    modifiers: ModifiersState,
+}
+
+impl<T: App> AppContainer<T> {
+    fn new(window_attributes: WindowAttributes, param: T::Param) -> Self {
+        AppContainer {
+            param: Some(param),
+            window: None,
+            window_attributes,
+            modifiers: ModifiersState::empty(),
+        }
+    }
+}
+
+impl<T: App> ApplicationHandler for AppContainer<T> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_some() {
+            return;
+        }
         let window = Arc::new(event_loop.create_window(self.window_attributes.clone()).unwrap());
         let size = window.inner_size();
-        self.window = Some(window.clone());
-        self.surface
-            .resume(&mut self.context, window, SurfaceSize::new(size.width, size.height));
-    }
-
-    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-        self.surface.suspend();
+        let display = Box::new(event_loop.owned_display_handle());
+        let context = Context::init(display, window.clone(), SurfaceSize::new(size.width, size.height));
+        let app = T::start(window.clone(), &context, self.param.take().unwrap());
+        self.window = Some(AppWindow { app, context, window });
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
-        let window = self.window.as_ref().unwrap();
+        let window = self.window.as_mut().unwrap();
+        let mut request = AppRequest::None;
         match event {
             WindowEvent::CloseRequested => {
-                self.app.close_window(event_loop);
+                if window.app.close_window() {
+                    event_loop.exit();
+                }
             }
             WindowEvent::Resized(size) => {
                 let size = SurfaceSize::new(size.width, size.height);
-                self.surface.resize(&self.context, size);
-                self.app.resize_window(&self.context, size);
-                window.request_redraw();
+                window.context.resize(size);
+                window.app.resize_window(&window.context, size);
+                window.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                self.render(event_loop);
-                if event_loop.control_flow() == ControlFlow::Poll && !event_loop.exiting() {
-                    self.window.as_ref().unwrap().request_redraw();
-                }
+                request = window.render();
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.app.input(
-                    event_loop,
-                    window,
-                    InputEvent::MouseMotion(Point::new(position.x as i32, position.y as i32)),
-                );
+                request = window.app.input(InputEvent::MouseMotion(Point::new(
+                    position.x as i32,
+                    position.y as i32,
+                )));
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                self.app.input(
-                    event_loop,
-                    window,
-                    InputEvent::MouseButton(MouseButtonEvent(button, state)),
-                );
+                request = window
+                    .app
+                    .input(InputEvent::MouseButton(MouseButtonEvent(button, state)));
             }
             WindowEvent::KeyboardInput {
                 event,
@@ -182,16 +182,12 @@ impl<T: App> ApplicationHandler for WindowApp<T> {
                 if let PhysicalKey::Code(key_code) = event.physical_key
                     && !event.repeat
                 {
-                    self.app.input(
-                        event_loop,
-                        window,
-                        InputEvent::Keyboard(KeyboardEvent {
-                            state: event.state,
-                            physical_key: key_code,
-                            text: event.text,
-                            modifiers: self.modifiers,
-                        }),
-                    );
+                    request = window.app.input(InputEvent::Keyboard(KeyboardEvent {
+                        state: event.state,
+                        physical_key: key_code,
+                        text: event.text,
+                        modifiers: self.modifiers,
+                    }));
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
@@ -199,19 +195,16 @@ impl<T: App> ApplicationHandler for WindowApp<T> {
             }
             _ => {}
         }
+        match request {
+            AppRequest::None => (),
+            AppRequest::Redraw => window.window.request_redraw(),
+            AppRequest::Exit => event_loop.exit(),
+        }
     }
 }
 
-pub trait EventLoopExt {
-    fn create_context(&self, features: AdapterFeatures) -> Context;
-    fn create_context_default_features(&self) -> Context;
-}
-
-impl EventLoopExt for EventLoop<()> {
-    fn create_context(&self, features: AdapterFeatures) -> Context {
-        Context::init(Box::new(self.owned_display_handle()), features)
-    }
-    fn create_context_default_features(&self) -> Context {
-        self.create_context(AdapterFeatures::default())
-    }
+pub fn run_app<T: App>(window_attributes: WindowAttributes, param: T::Param) {
+    let event_loop = EventLoop::new().unwrap();
+    let mut app: AppContainer<T> = AppContainer::new(window_attributes, param);
+    event_loop.run_app(&mut app).unwrap();
 }

@@ -2,7 +2,7 @@ mod batcher;
 pub mod draw;
 mod texture;
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use bytemuck::Pod;
 use euclid::point2;
@@ -32,232 +32,114 @@ impl Uv {
     }
 }
 
-pub struct AdapterFeatures {
-    pub required_features: wgpu::Features,
-    pub optional_features: wgpu::Features,
-    pub required_downlevel_capabilities: wgpu::DownlevelCapabilities,
-    pub required_limits: wgpu::Limits,
-}
-
-impl Default for AdapterFeatures {
-    fn default() -> Self {
-        Self {
-            required_features: wgpu::Features::empty(),
-            optional_features: wgpu::Features::empty(),
-            required_downlevel_capabilities: wgpu::DownlevelCapabilities {
-                flags: wgpu::DownlevelFlags::empty(),
-                shader_model: wgpu::ShaderModel::Sm5,
-                ..wgpu::DownlevelCapabilities::default()
-            },
-            required_limits: wgpu::Limits::downlevel_defaults(),
-        }
-    }
-}
+pub type Surface = wgpu::Surface<'static>;
+pub type SurfaceSize = euclid::Size2D<u32, Surface>;
 
 /// Context containing global wgpu resources.
 pub struct Context {
-    pub instance: wgpu::Instance,
-    pub adapter: wgpu::Adapter,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
-    pub surface_format: Option<wgpu::TextureFormat>,
+    instance: wgpu::Instance,
+    _adapter: wgpu::Adapter,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface: Surface,
+    config: wgpu::SurfaceConfiguration,
 }
 
 impl Context {
-    async fn get_adapter_with_capabilities_or_from_env(
-        instance: &wgpu::Instance,
-        required_features: &wgpu::Features,
-        required_downlevel_capabilities: &wgpu::DownlevelCapabilities,
-        surface: &Option<&wgpu::Surface<'_>>,
-    ) -> wgpu::Adapter {
-        use wgpu::Backends;
-        if std::env::var("WGPU_ADAPTER_NAME").is_ok() {
-            let adapter = wgpu::util::initialize_adapter_from_env_or_default(instance, *surface)
-                .await
-                .expect("No suitable GPU adapters found on the system!");
-
-            let adapter_info = adapter.get_info();
-            log::info!("Using {} ({:?})", adapter_info.name, adapter_info.backend);
-
-            let adapter_features = adapter.features();
-            assert!(
-                adapter_features.contains(*required_features),
-                "Adapter does not support the required features: {:?}",
-                *required_features - adapter_features
-            );
-
-            let downlevel_capabilities = adapter.get_downlevel_capabilities();
-            assert!(
-                downlevel_capabilities.shader_model >= required_downlevel_capabilities.shader_model,
-                "Adapter does not support the required minimum shader model: {:?}",
-                required_downlevel_capabilities.shader_model
-            );
-            assert!(
-                downlevel_capabilities
-                    .flags
-                    .contains(required_downlevel_capabilities.flags),
-                "Adapter does not support the required downlevel capabilities: {:?}",
-                required_downlevel_capabilities.flags - downlevel_capabilities.flags
-            );
-            adapter
-        } else {
-            let adapters = instance.enumerate_adapters(Backends::all()).await;
-
-            let mut chosen_adapter = None;
-            for adapter in adapters {
-                if let Some(surface) = surface
-                    && !adapter.is_surface_supported(surface)
-                {
-                    continue;
-                }
-
-                let required_features = *required_features;
-                let adapter_features = adapter.features();
-                if !adapter_features.contains(required_features) {
-                    continue;
-                } else {
-                    chosen_adapter = Some(adapter);
-                    break;
-                }
-            }
-
-            chosen_adapter.expect("No suitable GPU adapters found on the system!")
-        }
-    }
-
-    /// Initializes the device with the given features.
-    pub async fn init_async(display: Box<dyn WgpuHasDisplayHandle>, features: AdapterFeatures) -> Self {
+    pub async fn init_async(
+        display: Box<dyn WgpuHasDisplayHandle>,
+        window: Arc<impl wgpu::DisplayAndWindowHandle + 'static>,
+        mut size: SurfaceSize,
+    ) -> Self {
         log::info!("Initializing wgpu...");
+        size.width = size.width.max(1);
+        size.height = size.height.max(1);
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(display));
 
-        let adapter = Self::get_adapter_with_capabilities_or_from_env(
-            &instance,
-            &features.required_features,
-            &features.required_downlevel_capabilities,
-            &None,
-        )
-        .await;
-        // Make sure we use the texture resolution limits from the adapter, so we can support images
-        // the size of the surface.
-        let needed_limits = features.required_limits.using_resolution(adapter.limits());
+        let surface = instance.create_surface(window).unwrap();
+
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::None,
+                force_fallback_adapter: false,
+                compatible_surface: Some(&surface),
+            })
+            .await
+            .expect("Failed to find an appropriate adapter");
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
-                required_features: (features.optional_features & adapter.features()) | features.required_features,
-                required_limits: needed_limits,
+                required_features: wgpu::Features::empty(),
+                // Make sure we use the texture resolution limits from the adapter,
+                // so we can support images the size of the swapchain.
+                required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                 trace: wgpu::Trace::Off,
             })
             .await
-            .expect("Unable to find a suitable GPU adapter!");
+            .expect("Failed to create device");
+
+        let mut config = surface.get_default_config(&adapter, size.width, size.height).unwrap();
+        config.format = config.format.remove_srgb_suffix();
+        config.view_formats.push(config.format);
+        surface.configure(&device, &config);
 
         Self {
             instance,
-            adapter,
+            _adapter: adapter,
             device,
             queue,
-            surface_format: None,
+            surface,
+            config,
         }
     }
-
-    pub fn init(display: Box<dyn WgpuHasDisplayHandle>, features: AdapterFeatures) -> Self {
-        pollster::block_on(Self::init_async(display, features))
-    }
-}
-
-pub enum CurrentSurfaceTexture {
-    Render(wgpu::SurfaceTexture),
-    Skip,
-    Recreate,
-}
-
-#[derive(Default)]
-pub struct Surface {
-    surface: Option<wgpu::Surface<'static>>,
-    config: Option<wgpu::SurfaceConfiguration>,
-}
-
-pub type SurfaceSize = euclid::Size2D<u32, Surface>;
-
-impl Surface {
-    /// Create a new surface wrapper with no surface or configuration.
-    pub fn new() -> Self {
-        Surface::default()
-    }
-
-    /// Called when an event which matches [`Self::start_condition`] is received.
-    ///
-    /// On all native platforms, this is where we create the surface.
-    ///
-    /// Additionally, we configure the surface based on the (now valid) window size.
-    pub fn resume(
-        &mut self,
-        context: &mut Context,
-        window: impl Into<wgpu::SurfaceTarget<'static>>,
+    pub fn init(
+        display: Box<dyn WgpuHasDisplayHandle>,
+        window: Arc<impl wgpu::DisplayAndWindowHandle + 'static>,
         size: SurfaceSize,
-    ) {
-        // Window size is only actually valid after we enter the event loop.
-        let width = size.width.max(1);
-        let height = size.height.max(1);
-
-        log::debug!("Surface resume {size:?}");
-
-        // We didn't create the surface in pre_adapter, so we need to do so now.
-        self.surface = Some(context.instance.create_surface(window).unwrap());
-        let surface = self.surface.as_ref().unwrap();
-
-        // Get the default configuration,
-        let mut config = surface
-            .get_default_config(&context.adapter, width, height)
-            .expect("Surface isn't supported by the adapter.");
-
-        // All platforms support non-sRGB swapchains, so we can just use the format directly.
-        let format = config.format.remove_srgb_suffix();
-        config.format = format;
-        config.view_formats.push(format);
-
-        surface.configure(&context.device, &config);
-        context.surface_format = Some(config.format);
-        self.config = Some(config);
+    ) -> Self {
+        pollster::block_on(Self::init_async(display, window, size))
     }
 
-    /// Resize the surface, making sure to not resize to zero.
-    pub fn resize(&mut self, context: &Context, size: SurfaceSize) {
-        // log::debug!("Surface resize {size:?}");
-
-        let config = self.config.as_mut().unwrap();
-        config.width = size.width.max(1);
-        config.height = size.height.max(1);
-        let surface = self.surface.as_ref().unwrap();
-        surface.configure(&context.device, config);
+    pub fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+    pub fn surface_format(&self) -> wgpu::TextureFormat {
+        self.config.format
     }
 
-    /// Acquire the next surface texture.
-    pub fn acquire(&mut self, context: &Context) -> CurrentSurfaceTexture {
-        let surface = self.surface.as_ref().unwrap();
-        match surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(texture) => CurrentSurfaceTexture::Render(texture),
-            wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => CurrentSurfaceTexture::Skip,
+    pub fn resize(&mut self, size: SurfaceSize) {
+        self.config.width = size.width.max(1);
+        self.config.height = size.height.max(1);
+        self.surface.configure(&self.device, &self.config);
+    }
+
+    pub fn get_surface_texture(
+        &mut self,
+        window: &Arc<impl wgpu::DisplayAndWindowHandle + 'static>,
+    ) -> Option<wgpu::SurfaceTexture> {
+        match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame) => Some(frame),
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => None,
             wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
-                surface.configure(&context.device, self.config.as_ref().unwrap());
-                CurrentSurfaceTexture::Skip
+                self.surface.configure(&self.device, &self.config);
+                None
             }
             wgpu::CurrentSurfaceTexture::Validation => {
                 unreachable!("No error scope registered, so validation errors will panic")
             }
-            wgpu::CurrentSurfaceTexture::Lost => CurrentSurfaceTexture::Recreate,
+            wgpu::CurrentSurfaceTexture::Lost => {
+                self.surface = self.instance.create_surface(window.clone()).unwrap();
+                self.surface.configure(&self.device, &self.config);
+                None
+            }
         }
-    }
-
-    /// On suspend on android, we drop the surface, as it's no longer valid.
-    ///
-    /// A suspend event is always followed by at least one resume event.
-    pub fn suspend(&mut self) {
-        log::debug!("Surface suspend");
-        self.surface = None;
     }
 }
 

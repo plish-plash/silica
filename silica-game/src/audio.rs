@@ -1,10 +1,11 @@
 use std::{
     io::{Cursor, Error as IoError, ErrorKind},
     path::PathBuf,
+    time::Duration,
 };
 
 use kira::{
-    AudioManager, AudioManagerSettings, DefaultBackend,
+    AudioManager, AudioManagerSettings, Decibels, DefaultBackend, Tween,
     sound::FromFileError,
     track::{TrackBuilder, TrackHandle},
 };
@@ -42,6 +43,19 @@ impl Mixer {
             music,
             sfx,
         })
+    }
+
+    pub fn set_music_volume(&mut self, volume: f32, fade: bool) {
+        let volume: Decibels = (volume.max(0.001).log10() * 20.0).into();
+        let mut tween = Tween::default();
+        if fade {
+            tween.duration = Duration::from_secs(1);
+        }
+        self.music.set_volume(volume, tween);
+    }
+    pub fn set_sfx_volume(&mut self, volume: f32) {
+        let volume: Decibels = (volume.max(0.001).log10() * 20.0).into();
+        self.sfx.set_volume(volume, Tween::default());
     }
     pub fn is_music_playing(&self) -> bool {
         self.music.num_sounds() > 0

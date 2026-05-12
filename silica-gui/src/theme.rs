@@ -1,7 +1,10 @@
 use euclid::{Box2D, SideOffsets2D};
 use serde::Deserialize;
 use silica_asset::{AssetError, AssetSource, serde_util::string_or_struct};
-use silica_wgpu::{Context, Texture, TextureConfig, TextureRect, TextureSize, draw::*, wgpu::TextureFormat};
+use silica_layout::Size;
+use silica_wgpu::{
+    Context, Texture, TextureConfig, TextureRect, TextureSize, Uv, UvRect, draw::*, wgpu::TextureFormat,
+};
 
 use crate::{
     Color, FontSystem, Pixel, Rect, Rgba,
@@ -42,6 +45,17 @@ struct StandardPalette {
 }
 
 #[derive(Deserialize)]
+struct RectConfig {
+    rect: TextureRect,
+}
+
+impl RectConfig {
+    fn with_texture_size(self, size: TextureSize) -> (UvRect, Size) {
+        (Uv::normalize(self.rect, size), self.rect.size().to_i32().cast_unit())
+    }
+}
+
+#[derive(Deserialize)]
 struct NineSliceConfig {
     rect: TextureRect,
     insets: SideOffsets2D<u32, Texture>,
@@ -74,7 +88,7 @@ impl ButtonThemeConfig {
 
 #[derive(Deserialize)]
 struct StandardThemeConfig {
-    font: String,
+    fonts: Vec<String>,
     texture: String,
     palette: StandardPalette,
     gutter: NineSliceConfig,
@@ -84,6 +98,7 @@ struct StandardThemeConfig {
     button_delete: Option<ButtonThemeConfig>,
     tab: ButtonThemeConfig,
     tab_active: NineSliceConfig,
+    checkmark: RectConfig,
 }
 
 #[derive(Clone)]
@@ -126,6 +141,7 @@ pub struct StandardTheme {
     button_delete: ButtonTheme,
     tab: ButtonTheme,
     tab_active: NineSlice<Pixel>,
+    checkmark: (UvRect, Size),
 }
 
 impl StandardTheme {
@@ -143,7 +159,7 @@ impl StandardTheme {
         asset_source: &mut S,
     ) -> Result<Self, AssetError> {
         let config: StandardThemeConfig = silica_asset::load_yaml(asset_source, "config.yaml")?;
-        let font_system = FontSystem::with_font_asset(asset_source, &config.font)?;
+        let font_system = FontSystem::with_font_assets(asset_source, config.fonts.iter().map(String::as_str))?;
         let image = silica_asset::load_image(asset_source, &config.texture)?;
         let texture = Texture::new_with_data(
             context,
@@ -171,6 +187,7 @@ impl StandardTheme {
                 .unwrap_or(button),
             tab: config.tab.with_texture_size(texture_size),
             tab_active: config.tab_active.with_texture_size(texture_size),
+            checkmark: config.checkmark.with_texture_size(texture_size),
         })
     }
 }
@@ -233,6 +250,20 @@ impl Theme for StandardTheme {
                     self.tab_active.draw(renderer, rect, Rgba::WHITE);
                 } else {
                     self.tab.draw(renderer, rect, state, Self::state_color);
+                }
+            }
+            ButtonStyle::Checkbox => {
+                if toggled {
+                    self.button_toggled.draw(renderer, rect, state, Self::state_color);
+                    let checkmark_rect =
+                        Box2D::from_origin_and_size(rect.center() - (self.checkmark.1 / 2), self.checkmark.1);
+                    renderer.draw_theme_quad(Quad {
+                        rect: checkmark_rect,
+                        uv: self.checkmark.0,
+                        color: Rgba::WHITE,
+                    });
+                } else {
+                    self.button.draw(renderer, rect, state, Self::state_color);
                 }
             }
         };
