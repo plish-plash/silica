@@ -26,7 +26,7 @@ pub trait ImageExt {
 }
 
 impl ImageExt for Image {
-    const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+    const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
     fn size(&self) -> ImageSize {
         ImageSize::new(self.width, self.height)
     }

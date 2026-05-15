@@ -83,8 +83,10 @@ impl Context {
             .expect("Failed to create device");
 
         let mut config = surface.get_default_config(&adapter, size.width, size.height).unwrap();
-        config.format = config.format.remove_srgb_suffix();
-        config.view_formats.push(config.format);
+        if !config.format.is_srgb() {
+            config.format = config.format.add_srgb_suffix();
+            config.view_formats.push(config.format);
+        }
         surface.configure(&device, &config);
 
         Self {

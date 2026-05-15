@@ -62,7 +62,7 @@ impl<'a> LabelBuilder<'a> {
         self
     }
     pub fn color(mut self, color: Rgba) -> Self {
-        self.attrs.color_opt = Some(glyphon::Color(color.to_u32()));
+        self.attrs.color_opt = Some(glyphon::Color(color.into()));
         self
     }
     pub fn font_family(mut self, family: glyphon::Family<'static>) -> Self {
@@ -155,7 +155,7 @@ impl Label {
         );
     }
     pub fn set_text_and_color(&mut self, text: &str, color: Option<Rgba>) {
-        self.attrs.color_opt = color.map(|color| glyphon::Color(color.to_u32()));
+        self.attrs.color_opt = color.map(|color| glyphon::Color(color.into()));
         self.buffer.set_text(
             &mut self.font_system.borrow_mut(),
             text,
@@ -191,7 +191,7 @@ impl Widget for Label {
     }
     fn draw(&mut self, renderer: &mut GuiRenderer, area: &Area) {
         let point = area.content_rect.origin;
-        let default_color = glyphon::Color(renderer.theme().color(Color::Foreground).to_u32());
+        let default_color = glyphon::Color(renderer.theme().color(Color::Foreground).into());
         let text_renderer = self
             .text_renderer
             .get_or_insert_with(|| renderer.create_text_renderer());

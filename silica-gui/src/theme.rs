@@ -1,6 +1,6 @@
 use euclid::{Box2D, SideOffsets2D};
 use serde::Deserialize;
-use silica_asset::{AssetError, AssetSource, serde_util::string_or_struct};
+use silica_asset::{AssetError, AssetSource};
 use silica_layout::Size;
 use silica_wgpu::{
     Context, Texture, TextureConfig, TextureRect, TextureSize, Uv, UvRect, draw::*, wgpu::TextureFormat,
@@ -30,18 +30,13 @@ pub trait Theme {
 
 #[derive(Deserialize)]
 struct StandardPalette {
-    #[serde(deserialize_with = "string_or_struct")]
     background_color: Rgba,
-    #[serde(deserialize_with = "string_or_struct")]
     border_color: Rgba,
-    #[serde(deserialize_with = "string_or_struct")]
     gutter_color: Rgba,
-    #[serde(deserialize_with = "string_or_struct")]
     text_color: Rgba,
-    #[serde(deserialize_with = "string_or_struct")]
     accent_color: Rgba,
-    #[serde(deserialize_with = "string_or_struct")]
     accent_background_color: Rgba,
+    highlight_modifier: f32,
 }
 
 #[derive(Deserialize)]
@@ -145,14 +140,6 @@ pub struct StandardTheme {
 }
 
 impl StandardTheme {
-    fn state_color(color: Rgba, state: ButtonState) -> Rgba {
-        match state {
-            ButtonState::Normal => color,
-            ButtonState::Hover => color * 1.1,
-            ButtonState::Press => color * 0.9,
-            ButtonState::Disable => color.mul_alpha(0.5),
-        }
-    }
     pub fn load<S: AssetSource>(
         context: &Context,
         texture_config: &TextureConfig,
@@ -165,7 +152,7 @@ impl StandardTheme {
             context,
             texture_config,
             TextureSize::new(image.width, image.height),
-            TextureFormat::Rgba8Unorm,
+            TextureFormat::Rgba8UnormSrgb,
             &image.data,
         );
         let texture_size = texture.size();
@@ -190,6 +177,14 @@ impl StandardTheme {
             checkmark: config.checkmark.with_texture_size(texture_size),
         })
     }
+    fn state_color(&self, color: Rgba, state: ButtonState) -> Rgba {
+        match state {
+            ButtonState::Normal => color,
+            ButtonState::Hover => color * self.palette.highlight_modifier,
+            ButtonState::Press => color * 0.9,
+            ButtonState::Disable => color.mul_alpha(0.5),
+        }
+    }
 }
 impl Theme for StandardTheme {
     fn font_system(&self) -> &FontSystem {
@@ -209,7 +204,7 @@ impl Theme for StandardTheme {
         }
     }
     fn button_foreground_color(&self, state: ButtonState) -> Rgba {
-        Self::state_color(self.palette.text_color, state)
+        self.state_color(self.palette.text_color, state)
     }
     fn draw_gutter(&self, renderer: &mut GuiRenderer, rect: Rect) {
         self.gutter.draw(renderer, rect.to_box2d(), Rgba::WHITE);
@@ -222,20 +217,21 @@ impl Theme for StandardTheme {
         toggled: bool,
         state: ButtonState,
     ) {
+        let state_color = |color, state| self.state_color(color, state);
         let rect = rect.to_box2d();
         match style {
             ButtonStyle::Normal => {
                 if toggled {
-                    self.button_toggled.draw(renderer, rect, state, Self::state_color);
+                    self.button_toggled.draw(renderer, rect, state, state_color);
                 } else {
-                    self.button.draw(renderer, rect, state, Self::state_color);
+                    self.button.draw(renderer, rect, state, state_color);
                 }
             }
-            ButtonStyle::Confirm => self.button_confirm.draw(renderer, rect, state, Self::state_color),
-            ButtonStyle::Delete => self.button_delete.draw(renderer, rect, state, Self::state_color),
+            ButtonStyle::Confirm => self.button_confirm.draw(renderer, rect, state, state_color),
+            ButtonStyle::Delete => self.button_delete.draw(renderer, rect, state, state_color),
             ButtonStyle::Flat => {
                 let color = if state == ButtonState::Hover || state == ButtonState::Press {
-                    Self::state_color(self.palette.accent_background_color, state)
+                    self.state_color(self.palette.accent_background_color, state)
                 } else {
                     self.palette.background_color
                 };
@@ -249,12 +245,12 @@ impl Theme for StandardTheme {
                 if toggled {
                     self.tab_active.draw(renderer, rect, Rgba::WHITE);
                 } else {
-                    self.tab.draw(renderer, rect, state, Self::state_color);
+                    self.tab.draw(renderer, rect, state, state_color);
                 }
             }
             ButtonStyle::Checkbox => {
                 if toggled {
-                    self.button_toggled.draw(renderer, rect, state, Self::state_color);
+                    self.button_toggled.draw(renderer, rect, state, state_color);
                     let checkmark_rect =
                         Box2D::from_origin_and_size(rect.center() - (self.checkmark.1 / 2), self.checkmark.1);
                     renderer.draw_theme_quad(Quad {
@@ -263,7 +259,7 @@ impl Theme for StandardTheme {
                         color: Rgba::WHITE,
                     });
                 } else {
-                    self.button.draw(renderer, rect, state, Self::state_color);
+                    self.button.draw(renderer, rect, state, state_color);
                 }
             }
         };

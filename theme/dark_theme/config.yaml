@@ -7,6 +7,7 @@ palette:
   text_color: "#e5e5e5"
   accent_color: "#426074"
   accent_background_color: "#1e313e"
+  highlight_modifier: 1.8
 gutter:
   rect: { min: [0, 0], max: [16, 16] }
   insets: { top: 7, right: 7, bottom: 7, left: 7, _unit: null }

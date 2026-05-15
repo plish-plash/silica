@@ -1,5 +1,4 @@
 pub mod image;
-pub mod serde_util;
 
 use std::{
     error::Error,

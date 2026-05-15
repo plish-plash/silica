@@ -173,13 +173,7 @@ impl TextResources {
     fn new(context: &Context) -> Self {
         let swash_cache = glyphon::SwashCache::new();
         let cache = glyphon::Cache::new(context.device());
-        let atlas = glyphon::TextAtlas::with_color_mode(
-            context.device(),
-            context.queue(),
-            &cache,
-            context.surface_format(),
-            glyphon::ColorMode::Web,
-        );
+        let atlas = glyphon::TextAtlas::new(context.device(), context.queue(), &cache, context.surface_format());
         let viewport = glyphon::Viewport::new(context.device(), &cache);
         TextResources {
             swash_cache,

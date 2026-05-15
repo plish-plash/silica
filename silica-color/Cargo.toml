@@ -1,8 +1,9 @@
 [package]
 name = "silica-color"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
 bytemuck = "1.23"
+fast-srgb8 = "1.0"
 serde = { version = "1.0", features = ["derive"] }
