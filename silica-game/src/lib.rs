@@ -181,7 +181,7 @@ fn error_gui(gui: &mut Gui, error: AssetError) -> gui::NodeId {
                     ButtonBuilder::new()
                         .label(gui, "Exit")
                         .button_style(ButtonStyle::Delete)
-                        .build(gui, |gui: &mut Gui| gui.request_exit()),
+                        .build(gui, |mut context| context.gui().request_exit()),
                 )
                 .build(gui),
         )

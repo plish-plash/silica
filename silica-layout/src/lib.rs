@@ -303,8 +303,12 @@ pub fn measure_and_layout<Id: Key, Widget: LayoutWidget>(
     nodes: &mut SlotMap<Id, Node<Id, Widget>>,
     children: &SecondaryMap<Id, Vec<Id>>,
     id: Id,
-    rect: Rect,
+    mut rect: Rect,
+    shrink: bool,
 ) {
-    measure(nodes, children, id, rect.size);
+    let size = measure(nodes, children, id, rect.size);
+    if shrink {
+        rect.size = size;
+    }
     layout(nodes, children, id, rect);
 }

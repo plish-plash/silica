@@ -1,6 +1,14 @@
 use silica_gui::*;
 use silica_window::{Window, run_gui_app};
 
+#[derive(Clone)]
+enum DropdownOptions {
+    One,
+    Two,
+    Three,
+    Four,
+}
+
 fn build_gui(gui: &mut Gui) -> NodeId {
     let label = LabelBuilder::new("Hello, World!").font_size(24.0).build(gui);
     NodeBuilder::new()
@@ -17,16 +25,19 @@ fn build_gui(gui: &mut Gui) -> NodeId {
                     ButtonBuilder::new()
                         .modify_style(|style| style.grow = true)
                         .label(gui, "Normal Button")
-                        .build(gui, move |gui| {
-                            label.set_text(gui, "Pressed Normal Button");
+                        .build(gui, move |mut context| {
+                            label.set_text(context.gui(), "Pressed Normal Button");
                         }),
                 )
                 .child(
                     ButtonBuilder::new()
                         .modify_style(|style| style.grow = true)
                         .label(gui, "Toggle Button")
-                        .build_toggle(gui, move |gui, toggled| {
-                            label.set_text(gui, &format!("Toggle Button {}", if toggled { "On" } else { "Off" }));
+                        .build_toggle(gui, move |mut context, toggled| {
+                            label.set_text(
+                                context.gui(),
+                                &format!("Toggle Button {}", if toggled { "On" } else { "Off" }),
+                            );
                         }),
                 )
                 .child(
@@ -34,8 +45,8 @@ fn build_gui(gui: &mut Gui) -> NodeId {
                         .modify_style(|style| style.grow = true)
                         .button_style(ButtonStyle::Confirm)
                         .label(gui, "Confirm Button")
-                        .build(gui, move |gui| {
-                            label.set_text(gui, "Pressed Confirm Button");
+                        .build(gui, move |mut context| {
+                            label.set_text(context.gui(), "Pressed Confirm Button");
                         }),
                 )
                 .child(
@@ -43,16 +54,33 @@ fn build_gui(gui: &mut Gui) -> NodeId {
                         .modify_style(|style| style.grow = true)
                         .button_style(ButtonStyle::Delete)
                         .label(gui, "Delete Button")
-                        .build(gui, move |gui| {
-                            label.set_text(gui, "Pressed Delete Button");
+                        .build(gui, move |mut context| {
+                            label.set_text(context.gui(), "Pressed Delete Button");
                         }),
                 )
                 .build(gui),
         )
+        .child(DropdownButton::create(
+            gui,
+            vec![
+                DropdownOptions::One,
+                DropdownOptions::Two,
+                DropdownOptions::Three,
+                DropdownOptions::Four,
+            ],
+            vec![
+                "One".to_string(),
+                "Two".to_string(),
+                "Three".to_string(),
+                "Four".to_string(),
+            ],
+            0,
+            |mut context, option| {},
+        ))
         .child({
-            let group = ExclusiveGroup::new(false, move |gui, index| {
+            let group = ExclusiveGroup::new(false, move |mut context, index| {
                 label.set_text(
-                    gui,
+                    context.gui(),
                     &format!("Selected Tab {}", index.map(|i| i + 1).unwrap_or_default()),
                 );
             });
@@ -64,12 +92,15 @@ fn build_gui(gui: &mut Gui) -> NodeId {
                             style.padding = SideOffsets::new_all_same(8);
                             style.gap = 8;
                         })
-                        .child(Button::create_checkbox(gui, false, move |gui, toggled| {
-                            label.set_text(gui, &format!("Checkbox {}", if toggled { "On" } else { "Off" }));
+                        .child(Button::create_checkbox(gui, false, move |mut context, toggled| {
+                            label.set_text(
+                                context.gui(),
+                                &format!("Checkbox {}", if toggled { "On" } else { "Off" }),
+                            );
                         }))
                         .child({
-                            let slider = Slider::create(gui, false, move |gui, value| {
-                                label.set_text(gui, &format!("Moved Slider {}", value));
+                            let slider = Slider::create(gui, false, move |mut context, value| {
+                                label.set_text(context.gui(), &format!("Moved Slider {}", value));
                             });
                             gui.modify_style(slider, |style| style.grow = true);
                             slider

@@ -49,7 +49,7 @@ impl<'a> LabelBuilder<'a> {
         self.node = self.node.modify_style(f);
         self
     }
-    pub fn parent(mut self, parent: NodeId) -> Self {
+    pub fn parent(mut self, parent: impl Into<NodeId>) -> Self {
         self.node = self.node.parent(parent);
         self
     }

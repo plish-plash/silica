@@ -95,43 +95,65 @@ pub enum InputAction {
     Grab,
 }
 
-pub trait EventContext {
+pub trait EventContainer {
     fn get_by_type(&mut self, type_id: TypeId) -> Option<&mut dyn Any>;
 }
 
-#[allow(clippy::type_complexity)]
-#[derive(Clone)]
-pub struct EventFn(Rc<dyn Fn(&mut dyn EventContext, Option<Box<dyn Any>>)>);
+pub struct EventContext<'a> {
+    container: &'a mut dyn EventContainer,
+    executor: &'a mut EventExecutor,
+}
 
-impl EventFn {
-    fn get_context<C: 'static>(context: &mut dyn EventContext) -> &mut C {
-        context
+impl<'a> EventContext<'a> {
+    pub fn node_id(&self) -> NodeId {
+        self.executor.current_node
+    }
+    pub fn widget_id<T>(&self) -> WidgetId<T> {
+        WidgetId(self.node_id(), PhantomData)
+    }
+    pub fn widget<T: Widget>(&mut self) -> &mut T {
+        let id = self.widget_id();
+        self.gui().get_widget_mut(id).unwrap()
+    }
+    pub fn container<C: 'static>(&mut self) -> &mut C {
+        self.container
             .get_by_type(TypeId::of::<C>())
             .expect("EventContext doesn't provide requested type")
             .downcast_mut()
             .expect("EventContext::get_by_type return type mismatch")
     }
-    pub fn new<C, F>(f: F) -> Self
+    pub fn gui(&mut self) -> &mut Gui {
+        self.container()
+    }
+    pub fn executor(&mut self) -> &mut EventExecutor {
+        self.executor
+    }
+}
+
+#[allow(clippy::type_complexity)]
+#[derive(Clone)]
+pub struct EventFn(Rc<dyn Fn(EventContext, Option<Box<dyn Any>>)>);
+
+impl EventFn {
+    pub fn new<F>(f: F) -> Self
     where
-        C: 'static,
-        F: Fn(&mut C) + 'static,
+        F: Fn(EventContext) + 'static,
     {
         EventFn(Rc::new(move |context, _param| {
-            f(Self::get_context(context));
+            f(context);
         }))
     }
-    pub fn new_param<C, P, F>(f: F) -> Self
+    pub fn new_param<P, F>(f: F) -> Self
     where
-        C: 'static,
         P: 'static,
-        F: Fn(&mut C, P) + 'static,
+        F: Fn(EventContext, P) + 'static,
     {
         EventFn(Rc::new(move |context, param| {
             let param = param
                 .expect("no parameter for event")
                 .downcast()
                 .expect("event parameter wrong type");
-            f(Self::get_context(context), *param);
+            f(context, *param);
         }))
     }
 }
@@ -139,7 +161,8 @@ impl EventFn {
 #[must_use]
 #[derive(Default)]
 pub struct EventExecutor {
-    funcs: Vec<(EventFn, Option<Box<dyn Any>>)>,
+    current_node: NodeId,
+    funcs: Vec<(NodeId, EventFn, Option<Box<dyn Any>>)>,
     redraw: bool,
 }
 
@@ -148,11 +171,21 @@ impl EventExecutor {
         EventExecutor::default()
     }
     pub fn queue(&mut self, event: EventFn, param: Option<Box<dyn Any>>) {
-        self.funcs.push((event, param));
+        self.queue_node(self.current_node, event, param);
     }
-    pub fn execute(self, context: &mut impl EventContext) {
-        for func in self.funcs {
-            func.0.0(context, func.1);
+    pub fn queue_node(&mut self, node: impl Into<NodeId>, event: EventFn, param: Option<Box<dyn Any>>) {
+        self.funcs.push((node.into(), event, param));
+    }
+    pub fn execute(mut self, container: &mut impl EventContainer) {
+        while !self.funcs.is_empty() {
+            for func in std::mem::take(&mut self.funcs) {
+                self.current_node = func.0;
+                let context = EventContext {
+                    container,
+                    executor: &mut self,
+                };
+                func.1.0(context, func.2);
+            }
         }
     }
     pub fn request_redraw(&mut self) {
@@ -253,6 +286,7 @@ pub struct Gui {
     parents: SecondaryMap<NodeId, NodeId>,
     children: SecondaryMap<NodeId, Vec<NodeId>>,
     root: NodeId,
+    popups: Vec<NodeId>,
     input: GuiInput,
     grabbed_node: Option<NodeId>,
     layout_area: Rect,
@@ -271,6 +305,7 @@ impl Gui {
             parents: SecondaryMap::new(),
             children: SecondaryMap::new(),
             root,
+            popups: Vec::new(),
             input: GuiInput::default(),
             grabbed_node: None,
             layout_area: Rect::zero(),
@@ -279,6 +314,7 @@ impl Gui {
             exit_requested: false,
         }
     }
+
     pub fn font_system(&self) -> &FontSystem {
         self.theme.font_system()
     }
@@ -299,6 +335,7 @@ impl Gui {
         self.root = self.nodes.insert(Node::default());
         self.needs_layout = true;
     }
+
     pub fn get_widget<W: Widget>(&self, id: WidgetId<W>) -> Option<&W> {
         self.nodes
             .get(id.into())
@@ -348,6 +385,7 @@ impl Gui {
             self.needs_layout = true;
         }
     }
+
     pub fn add_child(&mut self, parent: impl Into<NodeId>, child: impl Into<NodeId>) {
         let parent = parent.into();
         let child = child.into();
@@ -365,6 +403,34 @@ impl Gui {
             self.needs_layout = true;
         }
     }
+    pub fn get_parent(&self, child: impl Into<NodeId>) -> Option<NodeId> {
+        self.parents.get(child.into()).copied()
+    }
+
+    pub fn add_popup(&mut self, popup: impl Into<NodeId>, point: Point, grab_input: bool) {
+        let popup = popup.into();
+        measure_and_layout(
+            &mut self.nodes,
+            &self.children,
+            popup,
+            Rect::new(point, Size::splat(i32::MAX)),
+            true,
+        );
+        self.popups.push(popup);
+        if grab_input {
+            self.grabbed_node = Some(popup);
+        }
+    }
+    pub fn remove_popup(&mut self, popup: impl Into<NodeId>) {
+        let popup = popup.into();
+        if let Some(index) = self.popups.iter().position(|p| *p == popup) {
+            self.popups.remove(index);
+        }
+        if self.grabbed_node == Some(popup) {
+            self.grabbed_node = None;
+        }
+    }
+
     pub fn get_style(&self, node: impl Into<NodeId>) -> &Style {
         &self.nodes.get(node.into()).unwrap().style
     }
@@ -379,6 +445,10 @@ impl Gui {
         f(&mut self.nodes.get_mut(node.into()).unwrap().style);
         self.needs_layout = true;
     }
+    pub fn get_area(&self, node: impl Into<NodeId>) -> &Area {
+        &self.nodes.get(node.into()).unwrap().area
+    }
+
     pub fn needs_layout(&self) -> bool {
         self.needs_layout
     }
@@ -400,7 +470,7 @@ impl Gui {
     }
     pub fn layout(&mut self) {
         if self.needs_layout {
-            measure_and_layout(&mut self.nodes, &self.children, self.root, self.layout_area);
+            measure_and_layout(&mut self.nodes, &self.children, self.root, self.layout_area, false);
             self.needs_layout = false;
         }
     }
@@ -458,6 +528,9 @@ impl Gui {
             scroll: Vec::new(),
         };
         Self::render_node(self.root, &mut self.nodes, &self.children, &mut renderer);
+        for popup in self.popups.iter() {
+            Self::render_node(*popup, &mut self.nodes, &self.children, &mut renderer);
+        }
         renderer.finish();
         self.batcher = Some(renderer.batcher);
     }
@@ -480,6 +553,7 @@ impl Gui {
         }
         let node = nodes.get_mut(id).unwrap();
         if let Some(widget) = node.widget.as_mut() {
+            executor.current_node = id;
             match widget.input(input, executor, &node.area) {
                 InputAction::Pass => {}
                 InputAction::Block => {
@@ -525,7 +599,7 @@ impl Gui {
         (executor, unhandled_event)
     }
 }
-impl EventContext for Gui {
+impl EventContainer for Gui {
     fn get_by_type(&mut self, type_id: TypeId) -> Option<&mut dyn Any> {
         if type_id == TypeId::of::<Gui>() {
             Some(self)

@@ -21,10 +21,9 @@ impl Slider {
             ..Default::default()
         }
     }
-    pub fn new<C, F>(vertical: bool, on_changed: F) -> Self
+    pub fn new<F>(vertical: bool, on_changed: F) -> Self
     where
-        C: 'static,
-        F: Fn(&mut C, f32) + 'static,
+        F: Fn(EventContext, f32) + 'static,
     {
         Slider {
             vertical,
@@ -34,10 +33,9 @@ impl Slider {
             on_changed: EventFn::new_param(on_changed),
         }
     }
-    pub fn new_scrollbar<C, F>(vertical: bool, scroll_size: Option<Rc<Cell<Size>>>, on_changed: F) -> Self
+    pub fn new_scrollbar<F>(vertical: bool, scroll_size: Option<Rc<Cell<Size>>>, on_changed: F) -> Self
     where
-        C: 'static,
-        F: Fn(&mut C, f32) + 'static,
+        F: Fn(EventContext, f32) + 'static,
     {
         Slider {
             vertical,
@@ -47,10 +45,9 @@ impl Slider {
             on_changed: EventFn::new_param(on_changed),
         }
     }
-    pub fn create<C, F>(gui: &mut Gui, vertical: bool, on_changed: F) -> WidgetId<Self>
+    pub fn create<F>(gui: &mut Gui, vertical: bool, on_changed: F) -> WidgetId<Self>
     where
-        C: 'static,
-        F: Fn(&mut C, f32) + 'static,
+        F: Fn(EventContext, f32) + 'static,
     {
         let slider = Self::new(vertical, on_changed);
         gui.create_widget(Self::style(), slider)
@@ -225,16 +222,16 @@ impl ScrollAreaBuilder {
     }
     pub fn horizontal_scroll(mut self, gui: &mut Gui) -> Self {
         let area = self.area;
-        let scrollbar = Slider::new_scrollbar(false, Some(self.size.clone()), move |gui, value| {
-            area.set_scroll(gui, value, false);
+        let scrollbar = Slider::new_scrollbar(false, Some(self.size.clone()), move |mut context, value| {
+            area.set_scroll(context.gui(), value, false);
         });
         self.horizontal_scrollbar = Some(gui.create_widget(Slider::style(), scrollbar));
         self
     }
     pub fn vertical_scroll(mut self, gui: &mut Gui) -> Self {
         let area = self.area;
-        let scrollbar = Slider::new_scrollbar(true, Some(self.size.clone()), move |gui, value| {
-            area.set_scroll(gui, value, true);
+        let scrollbar = Slider::new_scrollbar(true, Some(self.size.clone()), move |mut context, value| {
+            area.set_scroll(context.gui(), value, true);
         });
         self.vertical_scrollbar = Some(gui.create_widget(Slider::style(), scrollbar));
         self

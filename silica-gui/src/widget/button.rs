@@ -66,7 +66,7 @@ impl ButtonState {
             *self = state;
             changed = true;
         }
-        let clicked = *self == ButtonState::Press && (hotkey_pressed || input.clicked);
+        let clicked = *self == ButtonState::Press && (hotkey_pressed || (input.clicked && pointer_over));
         ButtonStateInput {
             action,
             changed,
@@ -80,6 +80,7 @@ enum ButtonEvent {
     Normal(EventFn),
     Toggle(EventFn),
     Exclusive(Rc<ExclusiveGroup>, usize),
+    Custom(Rc<dyn Fn(&mut EventExecutor, &Area, &mut bool)>),
 }
 
 #[must_use]
@@ -95,6 +96,10 @@ impl ButtonBuilder {
     pub fn new() -> Self {
         Self::default()
     }
+    pub fn style(mut self, style: Style) -> Self {
+        self.node = self.node.style(style);
+        self
+    }
     pub fn modify_style<F>(mut self, f: F) -> Self
     where
         F: FnOnce(&mut Style),
@@ -102,11 +107,11 @@ impl ButtonBuilder {
         self.node = self.node.modify_style(f);
         self
     }
-    pub fn parent(mut self, parent: NodeId) -> Self {
+    pub fn parent(mut self, parent: impl Into<NodeId>) -> Self {
         self.node = self.node.parent(parent);
         self
     }
-    pub fn child(mut self, child: NodeId) -> Self {
+    pub fn child(mut self, child: impl Into<NodeId>) -> Self {
         self.node = self.node.child(child);
         self
     }
@@ -131,20 +136,18 @@ impl ButtonBuilder {
         self.node = self.node.child(label);
         self
     }
-    pub fn build<C, F>(self, gui: &mut Gui, on_clicked: F) -> WidgetId<Button>
+    pub fn build<F>(self, gui: &mut Gui, on_clicked: F) -> WidgetId<Button>
     where
-        C: 'static,
-        F: Fn(&mut C) + 'static,
+        F: Fn(EventContext) + 'static,
     {
         let mut button = Button::new(self.button_style, on_clicked);
         button.set_enabled(self.enabled);
         button.hotkey = self.hotkey;
         self.node.build_widget(gui, button)
     }
-    pub fn build_toggle<C, F>(self, gui: &mut Gui, on_clicked: F) -> WidgetId<Button>
+    pub fn build_toggle<F>(self, gui: &mut Gui, on_clicked: F) -> WidgetId<Button>
     where
-        C: 'static,
-        F: Fn(&mut C, bool) + 'static,
+        F: Fn(EventContext, bool) + 'static,
     {
         let mut button = Button::new_toggle(self.button_style, self.toggled, on_clicked);
         button.set_enabled(self.enabled);
@@ -163,7 +166,7 @@ impl ButtonBuilder {
 impl Default for ButtonBuilder {
     fn default() -> Self {
         ButtonBuilder {
-            node: NodeBuilder::new().style(Button::default_style()),
+            node: NodeBuilder::new().style(Button::style()),
             button_style: ButtonStyle::default(),
             enabled: true,
             toggled: false,
@@ -183,7 +186,7 @@ pub struct Button {
 impl Button {
     const LABEL_FONT_SIZE: f32 = 20.0;
     const MIN_SIZE: Size = Size::new(128, 32);
-    fn default_style() -> Style {
+    fn style() -> Style {
         Style {
             min_size: Self::MIN_SIZE,
             cross_align: Align::Center,
@@ -194,7 +197,7 @@ impl Button {
         LabelBuilder::new(text)
             .style(Style {
                 grow: true,
-                margin: SideOffsets::new(0, 4, 0, 4),
+                margin: SideOffsets::new(0, 6, 0, 6),
                 ..Default::default()
             })
             .font_size(Self::LABEL_FONT_SIZE)
@@ -202,10 +205,9 @@ impl Button {
             .build(gui)
     }
 
-    pub fn new<C, F>(button_style: ButtonStyle, on_clicked: F) -> Self
+    pub fn new<F>(button_style: ButtonStyle, on_clicked: F) -> Self
     where
-        C: 'static,
-        F: Fn(&mut C) + 'static,
+        F: Fn(EventContext) + 'static,
     {
         Button {
             button_style,
@@ -215,10 +217,9 @@ impl Button {
             on_clicked: ButtonEvent::Normal(EventFn::new(on_clicked)),
         }
     }
-    pub fn new_toggle<C, F>(button_style: ButtonStyle, toggled: bool, on_clicked: F) -> Self
+    pub fn new_toggle<F>(button_style: ButtonStyle, toggled: bool, on_clicked: F) -> Self
     where
-        C: 'static,
-        F: Fn(&mut C, bool) + 'static,
+        F: Fn(EventContext, bool) + 'static,
     {
         Button {
             button_style,
@@ -238,27 +239,36 @@ impl Button {
             on_clicked: ButtonEvent::Exclusive(group, index),
         }
     }
-    pub fn create<C, F>(gui: &mut Gui, label: &str, on_clicked: F) -> WidgetId<Self>
+    pub fn new_custom<F>(button_style: ButtonStyle, on_clicked: F) -> Self
     where
-        C: 'static,
-        F: Fn(&mut C) + 'static,
+        F: Fn(&mut EventExecutor, &Area, &mut bool) + 'static,
+    {
+        Button {
+            button_style,
+            state: ButtonState::Normal,
+            hotkey: None,
+            toggled: false,
+            on_clicked: ButtonEvent::Custom(Rc::new(on_clicked)),
+        }
+    }
+    pub fn create<F>(gui: &mut Gui, label: &str, on_clicked: F) -> WidgetId<Self>
+    where
+        F: Fn(EventContext) + 'static,
     {
         ButtonBuilder::new().label(gui, label).build(gui, on_clicked)
     }
-    pub fn create_toggle<C, F>(gui: &mut Gui, label: &str, toggled: bool, on_clicked: F) -> WidgetId<Self>
+    pub fn create_toggle<F>(gui: &mut Gui, label: &str, toggled: bool, on_clicked: F) -> WidgetId<Self>
     where
-        C: 'static,
-        F: Fn(&mut C, bool) + 'static,
+        F: Fn(EventContext, bool) + 'static,
     {
         ButtonBuilder::new()
             .label(gui, label)
             .toggled(toggled)
             .build_toggle(gui, on_clicked)
     }
-    pub fn create_checkbox<C, F>(gui: &mut Gui, toggled: bool, on_clicked: F) -> WidgetId<Self>
+    pub fn create_checkbox<F>(gui: &mut Gui, toggled: bool, on_clicked: F) -> WidgetId<Self>
     where
-        C: 'static,
-        F: Fn(&mut C, bool) + 'static,
+        F: Fn(EventContext, bool) + 'static,
     {
         ButtonBuilder::new()
             .modify_style(|style| style.min_size = Size::splat(Self::MIN_SIZE.height))
@@ -311,6 +321,7 @@ impl Widget for Button {
                         executor.queue(group.on_selected.clone(), Some(Box::new(param)));
                     }
                 }
+                ButtonEvent::Custom(func) => func(executor, area, &mut self.toggled),
             }
         }
         state_input.action
@@ -348,15 +359,14 @@ pub struct ExclusiveGroup {
 }
 
 impl ExclusiveGroup {
-    pub fn new<C, F>(allow_deselect: bool, on_selected: F) -> Rc<Self>
+    pub fn new<F>(allow_deselect: bool, on_selected: F) -> Rc<Self>
     where
-        C: 'static,
-        F: Fn(&mut C, Option<usize>) + 'static,
+        F: Fn(EventContext, Option<usize>) + 'static,
     {
-        let deselect_others = EventFn::new_param(|gui, (group, index): (Rc<ExclusiveGroup>, usize)| {
+        let deselect_others = EventFn::new_param(|mut context, (group, index): (Rc<ExclusiveGroup>, usize)| {
             for (other_index, other_button) in group.buttons.borrow().iter().enumerate() {
                 if other_index != index {
-                    other_button.set_toggled(gui, false);
+                    other_button.set_toggled(context.gui(), false);
                 }
             }
         });
@@ -435,5 +445,142 @@ impl TabsBuilder {
             gui.add_child(parent, container);
         }
         container
+    }
+}
+
+struct PopupMenu(EventFn);
+
+impl Widget for PopupMenu {
+    fn input(&mut self, input: &GuiInput, executor: &mut EventExecutor, _area: &Area) -> InputAction {
+        if !input.blocked && input.clicked {
+            executor.queue(self.0.clone(), None);
+            InputAction::Pass
+        } else {
+            InputAction::Grab
+        }
+    }
+    fn draw(&mut self, _renderer: &mut GuiRenderer, _area: &Area) {}
+}
+
+pub struct DropdownButton<T> {
+    button: Button,
+    value: T,
+    on_selected: EventFn,
+    options: Vec<T>,
+    option_labels: Rc<Vec<String>>,
+    label: WidgetId<Label>,
+    menu: Option<NodeId>,
+}
+
+impl<T: Clone + 'static> DropdownButton<T> {
+    fn create_label(gui: &mut Gui, text: &str) -> WidgetId<Label> {
+        LabelBuilder::new(text)
+            .style(Style {
+                grow: true,
+                margin: SideOffsets::new(0, 6, 0, 6),
+                ..Default::default()
+            })
+            .font_size(Button::LABEL_FONT_SIZE)
+            .build(gui)
+    }
+    fn create_menu(gui: &mut Gui, dropdown: WidgetId<Self>) -> WidgetId<PopupMenu> {
+        let mut builder = NodeBuilder::new().modify_style(|style| {
+            style.direction = Direction::Column;
+            style.border = SideOffsets::new_all_same(1);
+        });
+        let labels = gui.get_widget(dropdown).unwrap().option_labels.clone();
+        for (index, label) in labels.iter().enumerate() {
+            builder = builder.child(
+                ButtonBuilder::new()
+                    .button_style(ButtonStyle::Flat)
+                    .label(gui, label)
+                    .build(gui, move |mut context| {
+                        let gui = context.gui();
+                        dropdown.hide_menu(gui);
+                        let (event, param) = dropdown.set_value_event(gui, index);
+                        context.executor().queue_node(dropdown, event, Some(Box::new(param)));
+                    }),
+            );
+        }
+        builder.build_widget(
+            gui,
+            PopupMenu(EventFn::new(move |mut context| dropdown.hide_menu(context.gui()))),
+        )
+    }
+
+    pub fn create<F>(
+        gui: &mut Gui,
+        options: Vec<T>,
+        labels: Vec<String>,
+        selected_index: usize,
+        on_selected: F,
+    ) -> WidgetId<Self>
+    where
+        F: Fn(EventContext, T) + 'static,
+    {
+        let show_fn = EventFn::new_param(move |mut context, rect: Rect| {
+            let dropdown = context.widget_id();
+            let gui = context.gui();
+            let menu = Self::create_menu(gui, dropdown);
+            gui.add_popup(menu, Point::new(rect.min_x(), rect.max_y()), true);
+            context.widget::<Self>().menu = Some(menu.into());
+        });
+
+        let label = Self::create_label(gui, &labels[selected_index]);
+        let arrow = gui.create_node(Style {
+            min_size: Size::splat(32),
+            ..Default::default()
+        }); // TODO
+        let button = Button::new_custom(ButtonStyle::Normal, move |executor, area, toggled| {
+            *toggled = true;
+            executor.queue(show_fn.clone(), Some(Box::new(area.content_rect)));
+        });
+        let value = options[selected_index].clone();
+        let dropdown = DropdownButton {
+            button,
+            value,
+            on_selected: EventFn::new_param(on_selected),
+            options,
+            option_labels: Rc::new(labels),
+            label,
+            menu: None,
+        };
+        NodeBuilder::new()
+            .style(Button::style())
+            .child(label)
+            .child(Separator::create(gui))
+            .child(arrow)
+            .build_widget(gui, dropdown)
+    }
+}
+impl<T: 'static> Widget for DropdownButton<T> {
+    fn input(&mut self, input: &GuiInput, executor: &mut EventExecutor, area: &Area) -> InputAction {
+        self.button.input(input, executor, area)
+    }
+    fn draw(&mut self, renderer: &mut GuiRenderer, area: &Area) {
+        self.button.draw(renderer, area);
+    }
+}
+impl<T: Clone + 'static> WidgetId<DropdownButton<T>> {
+    fn hide_menu(&self, gui: &mut Gui) {
+        let dropdown = gui.get_widget_mut(*self).unwrap();
+        dropdown.button.set_toggled(false);
+        if let Some(menu) = dropdown.menu.take() {
+            gui.remove_popup(menu);
+            gui.delete(menu);
+        }
+    }
+    fn set_value_event(&self, gui: &mut Gui, index: usize) -> (EventFn, T) {
+        let dropdown = gui.get_widget_mut(*self).unwrap();
+        let value = dropdown.options[index].clone();
+        dropdown.value = value.clone();
+        let label = dropdown.label;
+        let option_labels = dropdown.option_labels.clone();
+        let event = dropdown.on_selected.clone();
+        label.set_text(gui, &option_labels[index]);
+        (event, value)
+    }
+    pub fn value(&self, gui: &Gui) -> T {
+        gui.get_widget(*self).unwrap().value.clone()
     }
 }
