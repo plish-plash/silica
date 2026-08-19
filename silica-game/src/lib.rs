@@ -1,7 +1,6 @@
 pub mod audio;
 pub mod locale;
 pub mod particles;
-pub mod texture;
 pub mod util;
 pub mod world2d;
 

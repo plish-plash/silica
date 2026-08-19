@@ -75,7 +75,7 @@ fn build_gui(gui: &mut Gui) -> NodeId {
                 "Four".to_string(),
             ],
             0,
-            |mut context, option| {},
+            |_, _| {},
         ))
         .child({
             let group = ExclusiveGroup::new(false, move |mut context, index| {

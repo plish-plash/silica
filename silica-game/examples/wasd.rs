@@ -3,7 +3,6 @@ use std::sync::Arc;
 use silica_game::{
     keyboard::KeyCode,
     render::{Batcher, Context, SurfaceSize, Texture, TextureConfig, Uv, wgpu},
-    texture::{Image, ImageExt},
     world2d::{Camera2D, Pipeline2D, Point, Quad, Rect, Vector},
     *,
 };
@@ -62,7 +61,7 @@ impl Game for WasdGame {
     }
     fn load(_window: Arc<Window>, context: &Context, mut assets: GameAssets) -> Result<Self, AssetError> {
         let texture_config = TextureConfig::new(context, wgpu::FilterMode::Linear);
-        let player_texture = Image::load_texture(context, &texture_config, &mut assets, "player.png")?;
+        let player_texture = asset::load_texture(context, &texture_config, &mut assets, "player.png")?;
         Ok(WasdGame {
             texture_config,
             pipeline: None,

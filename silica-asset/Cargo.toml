@@ -4,7 +4,11 @@ version = "0.0.1"
 edition = "2024"
 
 [dependencies]
+silica-wgpu = { path = "../silica-wgpu" }
+log = "0.4"
+euclid = "0.22"
 zip = "8.6"
 serde = "1.0"
 serde_yml = "*"
 png = "0.18"
+etagere = "0.3"

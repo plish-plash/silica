@@ -1,14 +1,25 @@
 use std::io::{BufRead, Error as IoError, ErrorKind, Seek};
 
 use png::*;
+use silica_wgpu::{Context, Texture, TextureConfig, TextureRect, Uv, UvRect, wgpu};
+
+pub type ImagePoint = euclid::Point2D<u32, Image>;
+pub type ImageSize = euclid::Size2D<u32, Image>;
 
 pub struct Image {
-    pub width: u32,
-    pub height: u32,
-    pub data: Vec<u8>,
+    size: ImageSize,
+    data: Vec<u8>,
 }
 
 impl Image {
+    pub const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+
+    pub fn new(width: usize, height: usize) -> Self {
+        Image {
+            size: ImageSize::new(width as u32, height as u32),
+            data: vec![0; width * height],
+        }
+    }
     pub fn read<R: BufRead + Seek>(reader: R) -> Result<Self, DecodingError> {
         let mut decoder = Decoder::new(reader);
         decoder.set_transformations(Transformations::ALPHA);
@@ -30,9 +41,35 @@ impl Image {
             }
         }
         Ok(Image {
-            width: info.width,
-            height: info.height,
+            size: ImageSize::new(info.width, info.height),
             data,
         })
+    }
+
+    pub fn width(&self) -> usize {
+        self.size.width as usize
+    }
+    pub fn height(&self) -> usize {
+        self.size.height as usize
+    }
+    pub fn size(&self) -> ImageSize {
+        self.size
+    }
+
+    pub fn create_texture(&self, context: &Context, config: &TextureConfig) -> Texture {
+        Texture::new_with_data(context, config, self.size().cast_unit(), Self::FORMAT, &self.data)
+    }
+    pub fn write_to_texture(
+        &self,
+        context: &Context,
+        source: ImagePoint,
+        texture: &Texture,
+        rect: Option<TextureRect>,
+    ) -> UvRect {
+        const BPP: u32 = 4;
+        let rect = rect.unwrap_or(TextureRect::from_size(self.size().cast_unit()));
+        let offset = (source.x + (source.y * self.size.width)) * BPP;
+        texture.write_data(context, rect, &self.data, offset as u64, self.size.width * BPP);
+        Uv::normalize(rect, texture.size())
     }
 }

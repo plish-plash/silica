@@ -2,9 +2,7 @@ use euclid::{Box2D, SideOffsets2D};
 use serde::Deserialize;
 use silica_asset::{AssetError, AssetSource};
 use silica_layout::Size;
-use silica_wgpu::{
-    Context, Texture, TextureConfig, TextureRect, TextureSize, Uv, UvRect, draw::*, wgpu::TextureFormat,
-};
+use silica_wgpu::{Context, Texture, TextureConfig, TextureRect, TextureSize, Uv, UvRect, draw::*};
 
 use crate::{
     Color, FontSystem, Pixel, Rect, Rgba,
@@ -147,14 +145,7 @@ impl StandardTheme {
     ) -> Result<Self, AssetError> {
         let config: StandardThemeConfig = silica_asset::load_yaml(asset_source, "config.yaml")?;
         let font_system = FontSystem::with_font_assets(asset_source, config.fonts.iter().map(String::as_str))?;
-        let image = silica_asset::load_image(asset_source, &config.texture)?;
-        let texture = Texture::new_with_data(
-            context,
-            texture_config,
-            TextureSize::new(image.width, image.height),
-            TextureFormat::Rgba8UnormSrgb,
-            &image.data,
-        );
+        let texture = silica_asset::load_texture(context, texture_config, asset_source, &config.texture)?;
         let texture_size = texture.size();
         let button = config.button.with_texture_size(texture_size);
         Ok(StandardTheme {
