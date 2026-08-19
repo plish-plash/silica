@@ -11,7 +11,7 @@ silica-wgpu = { path = "../silica-wgpu" }
 silica-window = { path = "../silica-window" }
 
 log = "0.4"
-bytemuck = "1.23"
+bytemuck = "1.25"
 serde = { version = "1.0", features = ["derive"] }
 euclid = { version = "0.22", features = ["bytemuck", "serde"] }
 

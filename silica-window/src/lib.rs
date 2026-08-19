@@ -109,7 +109,7 @@ impl<T: App> AppWindow<T> {
         let request = self.app.render(&self.context, &view, &mut encoder);
         self.context.queue().submit([encoder.finish()]);
         self.window.pre_present_notify();
-        frame.present();
+        self.context.queue().present(frame);
         request
     }
 }

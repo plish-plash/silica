@@ -1,14 +1,16 @@
 [package]
 name = "silica-asset"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 
 [dependencies]
 silica-wgpu = { path = "../silica-wgpu" }
+silica-color = { path = "../silica-color" }
 log = "0.4"
+bytemuck = "1.25"
 euclid = "0.22"
 zip = "8.6"
 serde = "1.0"
-serde_yml = "*"
+serde-saphyr = "1.1"
 png = "0.18"
 etagere = "0.3"

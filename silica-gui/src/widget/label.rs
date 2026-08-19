@@ -118,10 +118,9 @@ impl Label {
         align: Option<TextAlign>,
         text: &str,
     ) -> Self {
-        let mut font_system_inner = font_system.borrow_mut();
-        let mut buffer = Buffer::new(&mut font_system_inner, metrics);
+        let mut buffer = Buffer::new(&mut font_system.borrow_mut(), metrics);
         if !text.is_empty() {
-            buffer.set_text(&mut font_system_inner, text, &attrs, Shaping::Advanced, align);
+            buffer.set_text(text, &attrs, Shaping::Advanced, align);
         }
         Label {
             font_system: font_system.clone(),
@@ -146,23 +145,11 @@ impl Label {
     }
 
     pub fn set_text(&mut self, text: &str) {
-        self.buffer.set_text(
-            &mut self.font_system.borrow_mut(),
-            text,
-            &self.attrs,
-            Shaping::Advanced,
-            self.align,
-        );
+        self.buffer.set_text(text, &self.attrs, Shaping::Advanced, self.align);
     }
     pub fn set_text_and_color(&mut self, text: &str, color: Option<Rgba>) {
         self.attrs.color_opt = color.map(|color| glyphon::Color(color.into()));
-        self.buffer.set_text(
-            &mut self.font_system.borrow_mut(),
-            text,
-            &self.attrs,
-            Shaping::Advanced,
-            self.align,
-        );
+        self.buffer.set_text(text, &self.attrs, Shaping::Advanced, self.align);
     }
 }
 impl Widget for Label {
@@ -180,14 +167,14 @@ impl Widget for Label {
         } else {
             Some(available_space.height as f32)
         };
+        self.buffer.set_size(width_constraint, height_constraint);
         self.buffer
-            .set_size(&mut self.font_system.borrow_mut(), width_constraint, height_constraint);
+            .shape_until_scroll(&mut self.font_system.borrow_mut(), false);
         self.buffer.text_size()
     }
     fn layout(&mut self, area: &Area) {
         let size = area.content_rect.size.to_f32();
-        self.buffer
-            .set_size(&mut self.font_system.borrow_mut(), Some(size.width), Some(size.height));
+        self.buffer.set_size(Some(size.width), Some(size.height));
     }
     fn draw(&mut self, renderer: &mut GuiRenderer, area: &Area) {
         let point = area.content_rect.origin;
@@ -195,8 +182,9 @@ impl Widget for Label {
         let text_renderer = self
             .text_renderer
             .get_or_insert_with(|| renderer.create_text_renderer());
+        self.buffer
+            .shape_until_scroll(&mut self.font_system.borrow_mut(), false);
         renderer.prepare_text(
-            &self.font_system,
             text_renderer,
             [TextArea {
                 buffer: &self.buffer,

@@ -1,6 +1,7 @@
 use std::io::{BufRead, Error as IoError, ErrorKind, Seek};
 
 use png::*;
+use silica_color::Rgba32Gamma;
 use silica_wgpu::{Context, Texture, TextureConfig, TextureRect, Uv, UvRect, wgpu};
 
 pub type ImagePoint = euclid::Point2D<u32, Image>;
@@ -17,7 +18,7 @@ impl Image {
     pub fn new(width: usize, height: usize) -> Self {
         Image {
             size: ImageSize::new(width as u32, height as u32),
-            data: vec![0; width * height],
+            data: vec![0; width * height * 4],
         }
     }
     pub fn read<R: BufRead + Seek>(reader: R) -> Result<Self, DecodingError> {
@@ -54,6 +55,18 @@ impl Image {
     }
     pub fn size(&self) -> ImageSize {
         self.size
+    }
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+    pub fn data_mut(&mut self) -> &mut [u8] {
+        &mut self.data
+    }
+    pub fn color_data(&self) -> &[Rgba32Gamma] {
+        bytemuck::cast_slice(&self.data)
+    }
+    pub fn color_data_mut(&mut self) -> &mut [Rgba32Gamma] {
+        bytemuck::cast_slice_mut(&mut self.data)
     }
 
     pub fn create_texture(&self, context: &Context, config: &TextureConfig) -> Texture {

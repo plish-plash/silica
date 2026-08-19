@@ -17,7 +17,7 @@ pub use silica_asset as asset;
 pub use silica_asset::AssetError;
 pub use silica_env::{AppInfo, app_info};
 pub use silica_gui as gui;
-pub use silica_gui::Rgba;
+pub use silica_gui::{Rgba, Rgba32Gamma};
 use silica_gui::{Gui, Theme, theme::StandardTheme};
 pub use silica_wgpu as render;
 use silica_wgpu::{Context, SurfaceSize, TextureConfig, wgpu};
@@ -122,7 +122,7 @@ impl<T: Game> App for GameApp<T> {
                         a: 1.0,
                     })
                 } else {
-                    wgpu::LoadOp::DontCare(wgpu::LoadOpDontCare::default())
+                    unsafe { wgpu::LoadOp::DontCare(wgpu::LoadOpDontCare::enabled()) }
                 };
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: None,

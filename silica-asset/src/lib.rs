@@ -1,5 +1,5 @@
-pub mod image;
-pub mod texture;
+mod image;
+mod texture;
 
 use std::{
     error::Error,
@@ -13,7 +13,8 @@ use serde::de::DeserializeOwned;
 use silica_wgpu::{Context, Texture, TextureConfig};
 use zip::{ZipArchive, read::ZipFileSeek};
 
-use crate::image::Image;
+pub use crate::image::*;
+pub use crate::texture::*;
 
 type AssetPath = str;
 
@@ -200,7 +201,7 @@ pub fn load_string<S: AssetSource>(asset_source: &mut S, path: &AssetPath) -> Re
 }
 pub fn load_yaml<S: AssetSource, T: DeserializeOwned + 'static>(asset_source: &mut S, path: &AssetPath) -> Result<T> {
     let reader = asset_source.load(path)?;
-    serde_yml::from_reader(reader)
+    serde_saphyr::from_reader(reader)
         .map_err(|e| AssetError::with_path(asset_source, path, IoError::new(ErrorKind::InvalidData, e)))
 }
 pub fn load_image<S: AssetSource>(asset_source: &mut S, path: &AssetPath) -> Result<Image> {

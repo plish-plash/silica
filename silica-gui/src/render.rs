@@ -8,7 +8,7 @@ use silica_wgpu::{
     BatcherPipeline, Context, ImmediateBatcher, SurfaceSize, Texture, TextureConfig, UvRect, draw::DrawQuad, wgpu,
 };
 
-use crate::{FontSystem, Pixel, Rgba, theme::Theme};
+use crate::{Pixel, Rgba, theme::Theme};
 
 #[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -117,7 +117,7 @@ impl QuadPipeline {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[vertex_buffer_layout],
+                buffers: &[Some(vertex_buffer_layout)],
                 compilation_options: PipelineCompilationOptions::default(),
             },
             fragment: Some(FragmentState {
@@ -270,7 +270,6 @@ impl GuiRenderer<'_, '_> {
     }
     pub fn prepare_text<'a>(
         &mut self,
-        font_system: &FontSystem,
         text_renderer: &mut TextRenderer,
         text_areas: impl IntoIterator<Item = glyphon::TextArea<'a>>,
     ) {
@@ -279,7 +278,7 @@ impl GuiRenderer<'_, '_> {
             .prepare(
                 self.context.device(),
                 self.context.queue(),
-                &mut font_system.borrow_mut(),
+                &mut self.theme.font_system().borrow_mut(),
                 &mut self.resources.text_resources.atlas,
                 &self.resources.text_resources.viewport,
                 text_areas.into_iter().map(|mut area| {

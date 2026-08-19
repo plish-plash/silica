@@ -125,11 +125,11 @@ impl Pipeline2D {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 compilation_options: PipelineCompilationOptions::default(),
-                buffers: &[VertexBufferLayout {
+                buffers: &[Some(VertexBufferLayout {
                     array_stride: std::mem::size_of::<Quad>() as u64,
                     step_mode: VertexStepMode::Instance,
                     attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x4, 3 => Float32x4],
-                }],
+                })],
             },
             fragment: Some(FragmentState {
                 module: &shader,

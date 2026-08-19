@@ -9,9 +9,9 @@ silica-color = { path = "../silica-color" }
 silica-layout = { path = "../silica-layout" }
 silica-wgpu = { path = "../silica-wgpu" }
 log = "0.4"
-bytemuck = "1.23"
+bytemuck = "1.25"
 serde = { version = "1.0", features = ["derive"] }
 euclid = { version = "0.22", features = ["bytemuck", "serde"] }
-slotmap = "1.0"
-glyphon = "0.11"
+slotmap = "1.1"
+glyphon = "0.12"
 sys-locale = "0.3"

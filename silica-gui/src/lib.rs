@@ -11,7 +11,7 @@ use std::{
 
 pub use glyphon;
 use silica_asset::{AssetError, AssetSource};
-pub use silica_color::Rgba;
+pub use silica_color::*;
 pub use silica_layout::*;
 use silica_wgpu::{Context, ImmediateBatcher, draw::draw_border, wgpu};
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
