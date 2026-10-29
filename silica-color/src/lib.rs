@@ -36,8 +36,10 @@ pub struct Rgba {
 }
 
 impl Rgba {
+    pub const NONE: Rgba = Rgba::new(0.0, 0.0, 0.0, 0.0);
     pub const BLACK: Rgba = Rgba::new_opaque(0.0, 0.0, 0.0);
     pub const WHITE: Rgba = Rgba::new_opaque(1.0, 1.0, 1.0);
+    pub const GRAY: Rgba = Rgba::new_opaque(0.5, 0.5, 0.5);
     pub const RED: Rgba = Rgba::new_opaque(1.0, 0.0, 0.0);
     pub const GREEN: Rgba = Rgba::new_opaque(0.0, 1.0, 0.0);
     pub const BLUE: Rgba = Rgba::new_opaque(0.0, 0.0, 1.0);

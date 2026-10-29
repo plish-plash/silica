@@ -20,22 +20,22 @@ impl BufferExt for Buffer {
 #[must_use]
 pub struct LabelBuilder<'a> {
     node: NodeBuilder,
+    text: &'a str,
     font_size: f32,
     line_height: f32,
     attrs: Attrs<'static>,
     align: Option<TextAlign>,
-    text: &'a str,
 }
 
 impl<'a> LabelBuilder<'a> {
     pub fn new(text: &'a str) -> Self {
         LabelBuilder {
             node: NodeBuilder::new(),
+            text,
             font_size: Label::DEFAULT_FONT_SIZE,
             line_height: 1.0,
             attrs: Attrs::new(),
             align: None,
-            text,
         }
     }
     pub fn style(mut self, style: Style) -> Self {
@@ -151,6 +151,9 @@ impl Label {
         self.attrs.color_opt = color.map(|color| glyphon::Color(color.into()));
         self.buffer.set_text(text, &self.attrs, Shaping::Advanced, self.align);
     }
+    pub fn set_rich_text<'r, 's, I>(&mut self, spans: I) where I: IntoIterator<Item = (&'s str, Attrs<'r>)> {
+        self.buffer.set_rich_text(spans, &self.attrs, Shaping::Advanced, self.align);
+    }
 }
 impl Widget for Label {
     fn measure(&mut self, available_space: Size) -> Size {
@@ -174,7 +177,7 @@ impl Widget for Label {
     }
     fn layout(&mut self, area: &Area) {
         let size = area.content_rect.size.to_f32();
-        self.buffer.set_size(Some(size.width), Some(size.height));
+        self.buffer.set_size(if self.align.is_some() { Some(size.width) } else { None }, Some(size.height));
     }
     fn draw(&mut self, renderer: &mut GuiRenderer, area: &Area) {
         let point = area.content_rect.origin;
@@ -208,6 +211,11 @@ impl WidgetId<Label> {
     pub fn set_text_and_color(&self, gui: &mut Gui, text: &str, color: Option<Rgba>) {
         if let Some(label) = gui.get_widget_mut(*self) {
             label.set_text_and_color(text, color);
+        }
+    }
+    pub fn set_rich_text<'r, 's, I>(&self, gui: &mut Gui, spans: I) where I: IntoIterator<Item = (&'s str, Attrs<'r>)> {
+        if let Some(label) = gui.get_widget_mut(*self) {
+            label.set_rich_text(spans);
         }
     }
 }
